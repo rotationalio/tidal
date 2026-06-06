@@ -1,0 +1,110 @@
+package tidal
+
+import (
+	"database/sql"
+	"reflect"
+	"time"
+
+	"go.rtnl.ai/ulid"
+)
+
+//============================================================================
+// Model Interface
+//============================================================================
+
+// All models that use the tidal package must implement this interface.
+type Model interface {
+	// Used during select operations to scan the model from a database row.
+	Scan(Operation, Scanner) error
+
+	// Used during select operations to identify the fields that should be returned and
+	// the order in which they should be returned. Note that during create and update
+	// operations, the fields are selected from the sql.NamedArgs returned by the
+	// Params method.
+	Fields(Operation) []string
+
+	// Used during insert and update operations to supply fields and their values to
+	// the database. Note that the names of the parameters must match the fields used
+	// in the database schema.
+	Params(Operation) []sql.NamedArg
+}
+
+// Scanner is an interface for *sql.Rows and *sql.Row so that models can implement how
+// they scan fields into their struct without having to specify every field every time.
+type Scanner interface {
+	Scan(dest ...any) error
+}
+
+// Prepare is an interface for models that need to prepare their fields before being
+// created or updated in the database. This is called automatically by the store before
+// creating or updating a model.
+type Preparer interface {
+	Prepare(Operation)
+}
+
+// Validator is an interface for models that need to have non-database constraints
+// validated before being created or updated -- these business rules are not enforced
+// by the database, but may be mirrored by database constratints depending on the store
+// type.
+type Validator interface {
+	Validate(Operation) error
+}
+
+//============================================================================
+// Model Factory
+//============================================================================
+
+func Make[M Model]() M {
+	var instance M
+
+	t := reflect.TypeOf(instance)
+	if t != nil && t.Kind() == reflect.Ptr {
+		return reflect.New(t.Elem()).Interface().(M)
+	}
+
+	return instance
+}
+
+//============================================================================
+// Base Model
+//============================================================================
+
+// BaseModel is embedded into most models to provide ID management and timestamps.
+type BaseModel struct {
+	ID       ulid.ULID
+	Created  time.Time
+	Modified time.Time
+}
+
+var _ Preparer = (*BaseModel)(nil)
+
+// Updates the modified timestamp for the model. If creating a new record, also creates
+// a new ULID for the ID field and the created timestamp. Database stores may override
+// the values set in this method, see the specific store type for details.
+func (b *BaseModel) Prepare(op Operation) {
+	switch op {
+	case Create:
+		b.ID = ulid.MakeSecure()
+		b.Created = time.Now().UTC()
+		b.Modified = b.Created
+
+	case Update:
+		b.Modified = time.Now().UTC()
+	}
+}
+
+// Validates the base model before update or create. This is called after Prepare so
+// there is no point checking for timstamp zero values as they will be set by Prepare.
+func (b *BaseModel) Validate(op Operation) error {
+	switch op {
+	case Update:
+		if b.ID.IsZero() {
+			return ErrMissingID
+		}
+	}
+	return nil
+}
+
+func (b *BaseModel) IsZero() bool {
+	return b == nil || (b.ID.IsZero() && b.Created.IsZero() && b.Modified.IsZero())
+}
