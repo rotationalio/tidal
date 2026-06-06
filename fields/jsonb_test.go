@@ -227,23 +227,22 @@ func TestJSONB_UnmarshalTo(t *testing.T) {
 	})
 
 	t.Run("Empty", func(t *testing.T) {
-		var v map[string]any
+		var v map[string]int
 		require.NoError(t, JSONB([]byte{}).UnmarshalTo(&v), "expected unmarshal to succeed")
 		require.Nil(t, v, "expected unmarshaled value to be empty")
 	})
 
 	t.Run("InvalidJSON", func(t *testing.T) {
 		invalid := []byte(`{"a":1,"b":2,}`)
-		var v map[string]any
+		var v map[string]int
 		require.Error(t, JSONB(invalid).UnmarshalTo(&v), "expected unmarshal to fail")
 		require.Nil(t, v, "expected unmarshaled value to be empty")
 	})
 
 	t.Run("ValidJSON", func(t *testing.T) {
-		valid := []byte(`{"a":1,"b":2}`)
 		var v map[string]int
-		require.NoError(t, JSONB(valid).UnmarshalTo(&v), "expected unmarshal to succeed")
-		require.Equal(t, map[string]int{"a": 1, "b": 2}, v, "expected unmarshaled value to be equal to the input")
+		require.NoError(t, JSONB(alphaBytes).UnmarshalTo(&v), "expected unmarshal to succeed")
+		require.Equal(t, alphaMap, v, "expected unmarshaled value to be equal to the input")
 	})
 }
 
@@ -256,8 +255,8 @@ func TestJSONB_MarshalFrom(t *testing.T) {
 
 	t.Run("Valid", func(t *testing.T) {
 		b := JSONB{}
-		require.NoError(t, b.MarshalFrom(map[string]int{"a": 1, "b": 2}), "could not marshal from valid value")
-		require.JSONEq(t, `{"a":1,"b":2}`, string(b), "expected the field to be equal to the input")
+		require.NoError(t, b.MarshalFrom(bravoMap), "could not marshal from valid value")
+		require.JSONEq(t, string(bravoBytes), string(b), "expected the field to be equal to the input")
 	})
 
 	t.Run("Invalid", func(t *testing.T) {
@@ -384,28 +383,28 @@ func (s *FieldsPostgresTestSuite) TestNullJSONB() {
 
 func TestNullJSONB_UnmarshalTo(t *testing.T) {
 	t.Run("Nil", func(t *testing.T) {
-		var v map[string]any
+		var v map[string]int
 		require.NoError(t, NullJSONB{}.UnmarshalTo(&v), "expected unmarshal to succeed")
 		require.Nil(t, v, "expected unmarshaled value to be empty")
 	})
 
 	t.Run("Null", func(t *testing.T) {
-		b := JSONB([]byte(`{"a":1,"b":2}`))
-		var v map[string]any
+		b := JSONB(charlieBytes)
+		var v map[string]int
 		require.NoError(t, NullJSONB{JSONB: b}.UnmarshalTo(&v), "expected no error")
 		require.Nil(t, v, "expected unmarshaled value to be empty")
 	})
 
 	t.Run("NotNull", func(t *testing.T) {
-		b := JSONB([]byte(`{"a":1,"b":2}`))
+		b := JSONB(deltaBytes)
 		var v map[string]int
 		require.NoError(t, NullJSONB{JSONB: b, Valid: true}.UnmarshalTo(&v), "expected no error")
-		require.Equal(t, map[string]int{"a": 1, "b": 2}, v, "expected unmarshaled value to be equal to the input")
+		require.Equal(t, deltaMap, v, "expected unmarshaled value to be equal to the input")
 	})
 
 	t.Run("InvalidJSON", func(t *testing.T) {
 		invalid := []byte(`{"a":1,"b":2,}`)
-		var v map[string]any
+		var v map[string]int
 		require.Error(t, NullJSONB{JSONB: JSONB(invalid), Valid: true}.UnmarshalTo(&v), "expected unmarshal to fail")
 		require.Nil(t, v, "expected unmarshaled value to be empty")
 	})
@@ -435,9 +434,9 @@ func TestNullJSONB_MarshalFrom(t *testing.T) {
 
 	t.Run("Valid", func(t *testing.T) {
 		b := NullJSONB{}
-		require.NoError(t, b.MarshalFrom(map[string]int{"a": 1, "b": 2}), "could not marshal from valid value")
+		require.NoError(t, b.MarshalFrom(charlieMap), "could not marshal from valid value")
 		require.True(t, b.Valid, "expected the field to be valid")
-		require.JSONEq(t, `{"a":1,"b":2}`, string(b.JSONB), "expected the field to be equal to the input")
+		require.JSONEq(t, string(charlieBytes), string(b.JSONB), "expected the field to be equal to the input")
 	})
 
 }
