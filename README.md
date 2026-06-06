@@ -1,6 +1,7 @@
 # Tidal
 
-[![PkgGoDev](https://pkg.go.dev/badge/go.rtnl.ai/tidal)](https://pkg.go.dev/go.rtnl.ai/tidal)
+[![CI Tests](https://github.com/rotationalio/tidal/actions/workflows/tests.yaml/badge.svg)](https://github.com/rotationalio/tidal/actions/workflows/tests.yaml)
+[![Go Doc](https://pkg.go.dev/badge/go.rtnl.ai/tidal)](https://pkg.go.dev/go.rtnl.ai/tidal)
 [![Go Report Card](https://goreportcard.com/badge/go.rtnl.ai/tidal)](https://goreportcard.com/report/go.rtnl.ai/tidal)
 
 **SQL Database Store.**
