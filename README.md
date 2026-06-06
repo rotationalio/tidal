@@ -8,6 +8,83 @@
 
 Tidal provides internal mechanisms for managing SQL databases in Rotational applications. It provides a migrations mechanism for storing schema versions inside the database and automatically applying schema changes. It also provides a CRUD and Model interface for use with direct SQL statements rather than ORM functionality. Tidal is not meant to be generally used but implements the Rotational SQL pattern.
 
+## Migrations
+
+The `go.rtnl.ai/tidal/migrations` package manages your database schema by tracking which schema version the database is at and automatically applying any newer migrations on startup. Migrations are plain SQL files, embedded into your binary, and applied inside a transaction so that the schema is only advanced when every pending migration succeeds.
+
+### Writing Migration Files
+
+Each migration is a `.sql` file named `NNNN_name_of_migration.sql`, where `NNNN` is the sequence ID that determines the order in which migrations are applied. Zero-pad the ID (typically to 4 digits) so the lexical file order matches the sequence order. The name portion is converted to a human-readable title (e.g. `add_users_table` becomes `Add Users Table`).
+
+```text
+migrations/
+  0001_initial_schema.sql
+  0002_add_users_table.sql
+  0003_add_posts_table.sql
+```
+
+Migration IDs must be greater than zero, unique, and monotonically increasing, and migration names must be unique. These rules are enforced by `Load` (see `Validate`).
+
+### Loading Migrations
+
+Embed the migration files into your package and load them into a `Migrations` slice. `Load` walks the file system, parses the IDs and names, sorts the migrations by ID, and validates them:
+
+```go
+package db
+
+import (
+	"embed"
+
+	"go.rtnl.ai/tidal/migrations"
+)
+
+//go:embed migrations/*.sql
+var migrationFS embed.FS
+
+func Migrations() (migrations.Migrations, error) {
+	return migrations.Load(migrationFS)
+}
+```
+
+### Applying Migrations
+
+Call `ApplyPostgres` or `ApplySQLite` (depending on your backend) when the database is first connected to. Both methods create the `migrations` bookkeeping table if it does not exist, look up the last applied migration ID, and apply only the migrations whose ID is greater than that. The `version` string you pass is recorded alongside each migration so you can tell which release applied a given schema change.
+
+```go
+ctx := context.Background()
+
+m, err := migrations.Load(migrationFS)
+if err != nil {
+	return err
+}
+
+// Postgres: uses an advisory lock so only one instance applies migrations at a time.
+if err := m.ApplyPostgres(ctx, db, "v1.4.0"); err != nil {
+	return err
+}
+
+// SQLite: applies all pending migrations in a single write transaction.
+if err := m.ApplySQLite(ctx, db, "v1.4.0"); err != nil {
+	return err
+}
+```
+
+Applying migrations is idempotent: if the database is already up to date, no migrations are applied. Because all pending migrations run inside one transaction, a failure rolls back the entire batch and leaves the schema unchanged.
+
+### Inspecting Applied Migrations
+
+Use `LastApplied` to read the most recently applied migration record (ID, name, version, and the time it was applied) from the `migrations` table:
+
+```go
+last, err := migrations.LastApplied(ctx, db)
+if err != nil {
+	return err
+}
+
+fmt.Printf("schema at migration %d (%s), applied %s with %s\n",
+	last.ID, last.Name, last.Applied, last.Version)
+```
+
 ## Fields
 
 The `go.rtnl.ai/tidal/fields` package provides custom column types that implement the `database/sql` [`driver.Valuer`](https://pkg.go.dev/database/sql/driver#Valuer) and [`sql.Scanner`](https://pkg.go.dev/database/sql#Scanner) interfaces. This means they can be used directly as `Model` struct fields and passed to or scanned from the database without any extra conversion code.
