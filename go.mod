@@ -3,8 +3,10 @@ module go.rtnl.ai/tidal
 go 1.26.1
 
 require (
+	github.com/mattn/go-sqlite3 v1.14.45
 	github.com/stretchr/testify v1.11.1
 	go.rtnl.ai/ulid v1.2.0
+	go.rtnl.ai/x v1.18.0
 )
 
 require (

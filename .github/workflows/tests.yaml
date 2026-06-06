@@ -48,7 +48,7 @@ jobs:
       GOPATH: ${{ github.workspace }}/go
       GOBIN: ${{ github.workspace }}/go/bin
       GOTEST_GITHUB_ACTIONS: 1
-      DATABASE_URL: "postgres://rotational:theeaglefliesatdawn@localhost:5432/rotational?sslmode=disable"
+      POSTGRES_DATABASE_URL: "postgres://rotational:theeaglefliesatdawn@localhost:5432/rotational?sslmode=disable"
     defaults:
       run:
         working-directory: ${{ env.GOPATH }}/src/go.rtnl.ai/tidal
