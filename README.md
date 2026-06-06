@@ -1,10 +1,8 @@
 # Tidal
 
-[![Build Status](https://travis-ci.com/rotationalio/tidal.svg?branch=master)](https://travis-ci.com/rotationalio/tidal)
-[![codecov](https://codecov.io/gh/rotationalio/tidal/branch/master/graph/badge.svg)](https://codecov.io/gh/rotationalio/tidal)
-[![PkgGoDev](https://pkg.go.dev/badge/github.com/rotationalio/tidal)](https://pkg.go.dev/github.com/rotationalio/tidal)
-[![Go Report Card](https://goreportcard.com/badge/github.com/rotationalio/tidal)](https://goreportcard.com/report/github.com/rotationalio/tidal)
+[![PkgGoDev](https://pkg.go.dev/badge/go.rtnl.ai/tidal)](https://pkg.go.dev/go.rtnl.ai/tidal)
+[![Go Report Card](https://goreportcard.com/badge/go.rtnl.ai/tidal)](https://goreportcard.com/report/go.rtnl.ai/tidal)
 
-**Database schema migration management and code generation.**
+**SQL Database Store.**
 
-Tidal provides a mechanism to define and manage database schema migrations using SQL files that both specify the up (apply) and down (rollback) actions to ensure consistent changes in the database schema as application versions change. Tidal includes a CLI tool to generate these files into descriptors, directly adding them to your application source code so they can be compiled into the binary. The tidal package implements utilities for managing the state of the database with respect to the migrations, even across different binaries and application versions.
+Tidal provides internal mechanisms for managing SQL databases in Rotational applications. It provides a migrations mechanism for storing schema versions inside the database and automatically applying schema changes. It also provides a CRUD and Model interface for use with direct SQL statements rather than ORM functionality. Tidal is not meant to be generally used but implements the Rotational SQL pattern.
