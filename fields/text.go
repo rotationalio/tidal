@@ -20,6 +20,7 @@ type NullStringArray struct {
 func (s *StringArray) Scan(src any) (err error) {
 	if src == nil {
 		*s = nil
+		return nil
 	}
 
 	switch src := src.(type) {
@@ -60,6 +61,7 @@ func (n *NullStringArray) Scan(src any) (err error) {
 		return err
 	}
 
+	n.Valid = len(n.StringArray) > 0
 	return nil
 }
 
