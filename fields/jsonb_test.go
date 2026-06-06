@@ -8,6 +8,18 @@ import (
 	. "go.rtnl.ai/tidal/fields"
 )
 
+var (
+	alphaMap   = map[string]int{"a": 1, "b": 2}
+	bravoMap   = map[string]int{"b": 2, "a": 1}
+	charlieMap = map[string]int{"c": 3, "d": 4}
+	deltaMap   = map[string]int{"e": 5, "f": 6}
+
+	alphaBytes   = []byte(`{"a":1,"b":2}`)
+	bravoBytes   = []byte(`{"b":2,"a":1}`)
+	charlieBytes = []byte(`{"c":3,"d":4}`)
+	deltaBytes   = []byte(`{"e":5,"f":6}`)
+)
+
 func TestJSONB_Normalize(t *testing.T) {
 	t.Run("StableKeyOrder", func(t *testing.T) {
 		alpha := []byte(`{"a":1,"b":2}`)
@@ -35,8 +47,8 @@ func (s *FieldsSqliteTestSuite) TestJSONB() {
 
 		// Insert a new record into the database.
 		params := []any{
-			sql.Named("alpha", JSONB([]byte(`{"a":1,"b":2"}`))),
-			sql.Named("bravo", JSONB([]byte(`{"c":3,"d":4"}`))),
+			sql.Named("alpha", JSONB(alphaBytes)),
+			sql.Named("bravo", JSONB(bravoBytes)),
 		}
 		result, err := tx.Exec("INSERT INTO testing (alpha, bravo) VALUES (:alpha, :bravo)", params...)
 		require.NoError(err, "could not insert record")
@@ -50,8 +62,8 @@ func (s *FieldsSqliteTestSuite) TestJSONB() {
 
 		var alpha, bravo JSONB
 		require.NoError(row.Scan(&alpha, &bravo), "could not scan record")
-		require.Equal(JSONB([]byte(`{"a":1,"b":2"}`)), alpha, "expected alpha to be equal to the input")
-		require.Equal(JSONB([]byte(`{"c":3,"d":4"}`)), bravo, "expected bravo to be equal to the input")
+		require.Equal(JSONB(alphaBytes), alpha, "expected alpha to be equal to the input")
+		require.Equal(JSONB(bravoBytes), bravo, "expected bravo to be equal to the input")
 	})
 
 	s.Run("Null", func() {
@@ -113,16 +125,16 @@ func (s *FieldsPostgresTestSuite) TestJSONB() {
 		defer tx.Rollback()
 
 		params := []any{
-			sql.Named("alpha", JSONB([]byte(`{"a":1,"b":2"}`))),
-			sql.Named("bravo", JSONB([]byte(`{"c":3,"d":4"}`))),
-			sql.Named("charlie", JSONB([]byte(`{"e":5,"f":6"}`))),
-			sql.Named("delta", JSONB([]byte(`{"g":7,"h":8"}`))),
+			sql.Named("alpha", JSONB(alphaBytes)),
+			sql.Named("bravo", JSONB(bravoBytes)),
+			sql.Named("charlie", JSONB(charlieBytes)),
+			sql.Named("delta", JSONB(deltaBytes)),
 		}
-		result, err := tx.Exec("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ($1, $2, $3, $4)", params...)
-		require.NoError(err, "could not insert record")
 
-		id, err := result.LastInsertId()
-		require.NoError(err, "could not get last insert id")
+		ins := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ($1, $2, $3, $4) RETURNING id", params...)
+
+		var id int64
+		require.NoError(ins.Scan(&id), "could not insert record or scan ID")
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.
@@ -130,10 +142,10 @@ func (s *FieldsPostgresTestSuite) TestJSONB() {
 
 		var alpha, bravo, charlie, delta JSONB
 		require.NoError(row.Scan(&alpha, &bravo, &charlie, &delta), "could not scan record")
-		require.Equal(JSONB([]byte(`{"a":1,"b":2"}`)), alpha, "expected alpha to be equal to the input")
-		require.Equal(JSONB([]byte(`{"c":3,"d":4"}`)), bravo, "expected bravo to be equal to the input")
-		require.Equal(JSONB([]byte(`{"e":5,"f":6"}`)), charlie, "expected charlie to be equal to the input")
-		require.Equal(JSONB([]byte(`{"g":7,"h":8"}`)), delta, "expected delta to be equal to the input")
+		require.JSONEq(string(alphaBytes), string(alpha), "expected alpha to be equal to the input")
+		require.JSONEq(string(bravoBytes), string(bravo), "expected bravo to be equal to the input")
+		require.JSONEq(string(charlieBytes), string(charlie), "expected charlie to be equal to the input")
+		require.JSONEq(string(deltaBytes), string(delta), "expected delta to be equal to the input")
 	})
 
 	s.Run("Null", func() {
@@ -143,11 +155,10 @@ func (s *FieldsPostgresTestSuite) TestJSONB() {
 		defer tx.Rollback()
 
 		// Insert a new record into the database.
-		result, err := tx.Exec("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ('null', NULL, 'null', NULL)")
-		require.NoError(err, "could not insert record")
+		ins := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ('null', NULL, 'null', NULL) RETURNING id")
 
-		id, err := result.LastInsertId()
-		require.NoError(err, "could not get last insert id")
+		var id int64
+		require.NoError(ins.Scan(&id), "could not scan record")
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.
@@ -171,11 +182,10 @@ func (s *FieldsPostgresTestSuite) TestJSONB() {
 			sql.Named("bravo", nil),
 			sql.Named("delta", nil),
 		}
-		result, err := tx.Exec("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ('{}', $1, '{}', $2)", params...)
-		require.NoError(err, "could not insert record")
+		ins := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ('{}', $1, '{}', $2) RETURNING id", params...)
 
-		id, err := result.LastInsertId()
-		require.NoError(err, "could not get last insert id")
+		var id int64
+		require.NoError(ins.Scan(&id), "could not scan record")
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.
@@ -269,8 +279,8 @@ func (s *FieldsSqliteTestSuite) TestNullJSONB() {
 		defer tx.Rollback()
 
 		params := []any{
-			sql.Named("alpha", NullJSONB{JSONB: JSONB([]byte(`{"a":1,"b":2"}`)), Valid: true}),
-			sql.Named("bravo", NullJSONB{JSONB: JSONB([]byte(`{"c":3,"d":4"}`)), Valid: true}),
+			sql.Named("alpha", NullJSONB{JSONB: JSONB(alphaBytes), Valid: true}),
+			sql.Named("bravo", NullJSONB{JSONB: JSONB(bravoBytes), Valid: true}),
 		}
 		result, err := tx.Exec("INSERT INTO testing (alpha, bravo) VALUES (:alpha, :bravo)", params...)
 		require.NoError(err, "could not insert record")
@@ -284,8 +294,8 @@ func (s *FieldsSqliteTestSuite) TestNullJSONB() {
 
 		var alpha, bravo NullJSONB
 		require.NoError(row.Scan(&alpha, &bravo), "could not scan record")
-		require.Equal(NullJSONB{JSONB: JSONB([]byte(`{"a":1,"b":2"}`)), Valid: true}, alpha, "expected alpha to be equal to the input")
-		require.Equal(NullJSONB{JSONB: JSONB([]byte(`{"c":3,"d":4"}`)), Valid: true}, bravo, "expected bravo to be equal to the input")
+		require.Equal(NullJSONB{JSONB: JSONB(alphaBytes), Valid: true}, alpha, "expected alpha to be equal to the input")
+		require.Equal(NullJSONB{JSONB: JSONB(bravoBytes), Valid: true}, bravo, "expected bravo to be equal to the input")
 	})
 
 	s.Run("Null", func() {
@@ -320,16 +330,15 @@ func (s *FieldsPostgresTestSuite) TestNullJSONB() {
 		defer tx.Rollback()
 
 		params := []any{
-			sql.Named("alpha", NullJSONB{JSONB: JSONB([]byte(`{"a":1,"b":2"}`)), Valid: true}),
-			sql.Named("bravo", NullJSONB{JSONB: JSONB([]byte(`{"c":3,"d":4"}`)), Valid: true}),
-			sql.Named("charlie", NullJSONB{JSONB: JSONB([]byte(`{"e":5,"f":6"}`)), Valid: true}),
-			sql.Named("delta", NullJSONB{JSONB: JSONB([]byte(`{"g":7,"h":8"}`)), Valid: true}),
+			sql.Named("alpha", NullJSONB{JSONB: JSONB(alphaBytes), Valid: true}),
+			sql.Named("bravo", NullJSONB{JSONB: JSONB(bravoBytes), Valid: true}),
+			sql.Named("charlie", NullJSONB{JSONB: JSONB(charlieBytes), Valid: true}),
+			sql.Named("delta", NullJSONB{JSONB: JSONB(deltaBytes), Valid: true}),
 		}
-		result, err := tx.Exec("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ($1, $2, $3, $4)", params...)
-		require.NoError(err, "could not insert record")
+		ins := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ($1, $2, $3, $4) RETURNING id", params...)
 
-		id, err := result.LastInsertId()
-		require.NoError(err, "could not get last insert id")
+		var id int64
+		require.NoError(ins.Scan(&id), "could not insert record or scan ID")
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.
@@ -337,10 +346,15 @@ func (s *FieldsPostgresTestSuite) TestNullJSONB() {
 
 		var alpha, bravo, charlie, delta NullJSONB
 		require.NoError(row.Scan(&alpha, &bravo, &charlie, &delta), "could not scan record")
-		require.Equal(NullJSONB{JSONB: JSONB([]byte(`{"a":1,"b":2"}`)), Valid: true}, alpha, "expected alpha to be equal to the input")
-		require.Equal(NullJSONB{JSONB: JSONB([]byte(`{"c":3,"d":4"}`)), Valid: true}, bravo, "expected bravo to be equal to the input")
-		require.Equal(NullJSONB{JSONB: JSONB([]byte(`{"e":5,"f":6"}`)), Valid: true}, charlie, "expected charlie to be equal to the input")
-		require.Equal(NullJSONB{JSONB: JSONB([]byte(`{"g":7,"h":8"}`)), Valid: true}, delta, "expected delta to be equal to the input")
+		require.True(alpha.Valid, "expected alpha to be valid")
+		require.True(bravo.Valid, "expected bravo to be valid")
+		require.True(charlie.Valid, "expected charlie to be valid")
+		require.True(delta.Valid, "expected delta to be valid")
+
+		require.JSONEq(string(alphaBytes), string(alpha.JSONB), "expected alpha to be equal to the input")
+		require.JSONEq(string(bravoBytes), string(bravo.JSONB), "expected bravo to be equal to the input")
+		require.JSONEq(string(charlieBytes), string(charlie.JSONB), "expected charlie to be equal to the input")
+		require.JSONEq(string(deltaBytes), string(delta.JSONB), "expected delta to be equal to the input")
 	})
 
 	s.Run("Null", func() {
@@ -350,11 +364,10 @@ func (s *FieldsPostgresTestSuite) TestNullJSONB() {
 		defer tx.Rollback()
 
 		// Insert a new record into the database.
-		result, err := tx.Exec("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ('null', NULL, 'null', NULL)")
-		require.NoError(err, "could not insert record")
+		ins := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ('null', NULL, 'null', NULL) RETURNING id")
 
-		id, err := result.LastInsertId()
-		require.NoError(err, "could not get last insert id")
+		var id int64
+		require.NoError(ins.Scan(&id), "could not scan record")
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.

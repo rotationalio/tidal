@@ -5,6 +5,8 @@ import (
 	"errors"
 
 	"go.rtnl.ai/x/dsn"
+
+	_ "github.com/lib/pq"
 )
 
 type PostgresSuite struct {
