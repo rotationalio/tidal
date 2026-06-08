@@ -49,6 +49,7 @@ func (s *PostgresTestSuite) CreateDB() {
 }
 
 func (s *PostgresTestSuite) SetupSuite() {
+	s.DropTables()
 	s.CreateDB()
 }
 
