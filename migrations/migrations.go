@@ -195,3 +195,7 @@ func (m *Migration) SQL() (_ string, err error) {
 
 	return string(bytes.TrimSpace(data)), nil
 }
+
+func (m *Migration) WithFS(fs fs.FS) {
+	m.fs = fs
+}

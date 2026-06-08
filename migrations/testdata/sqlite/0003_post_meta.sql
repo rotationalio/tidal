@@ -1,0 +1,5 @@
+ALTER TABLE posts
+    ADD COLUMN status TEXT NOT NULL DEFAULT 'draft';
+
+ALTER TABLE posts
+    ADD COLUMN published_at DATETIME DEFAULT NULL;
