@@ -18,6 +18,11 @@ func (s *PostgresSuite) SetupSuite() {
 	s.CreateDB("")
 }
 
+func (s *PostgresSuite) TearDownSuite() {
+	s.T().Log("tearing down the postgres test suite")
+	s.DropTables()
+}
+
 func (s *PostgresSuite) AfterTest(suiteName, testName string) {
 	s.T().Logf("resetting the postgres test suite after test %s.%s", suiteName, testName)
 	s.ResetDB()
@@ -71,6 +76,32 @@ func (s *PostgresSuite) ResetDB() {
 		require.NoError(err, "could not truncate database")
 	} else {
 		s.T().Log("cannot reset the postgres database because s.DB is nil")
+	}
+}
+
+const dropTableQuery = `
+DO $$
+DECLARE
+	l_stmt TEXT;
+BEGIN
+	SELECT 'DROP TABLE IF EXISTS ' || string_agg(format('%I.%I', schemaname, tablename), ', ') || ' CASCADE'
+	INTO l_stmt
+	FROM pg_tables
+	WHERE schemaname = 'public';
+
+	IF l_stmt IS NOT NULL THEN
+		EXECUTE l_stmt;
+	END IF;
+END $$;
+`
+
+func (s *PostgresSuite) DropTables() {
+	if s.DB != nil {
+		require := s.Require()
+		_, err := s.DB.Exec(dropTableQuery)
+		require.NoError(err, "could not drop tables")
+	} else {
+		s.T().Log("cannot drop tables because s.DB is nil")
 	}
 }
 
