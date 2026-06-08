@@ -20,7 +20,8 @@ var postgresFS embed.FS
 func TestPostgres(t *testing.T) {
 	s := &PostgresTestSuite{}
 	if _, err := s.ResolveDSN(""); err != nil {
-		t.Skipf("skipping fields postgres tests because of DSN resolution error: %v", err)
+		// Fail the test when DSN is not resolved
+		t.Fatalf("failed fields postgres tests because of DSN resolution error: %v", err)
 	}
 
 	// Run the tests

@@ -255,12 +255,7 @@ SQLite tests need no setup. Each test suite creates its own database file in a t
 Postgres tests are skipped unless a database URL is set. Start a local Postgres instance (matching CI):
 
 ```bash
-docker run -d --name tidal-postgres \
-  -e POSTGRES_USER=rotational \
-  -e POSTGRES_PASSWORD=theeaglefliesatdawn \
-  -e POSTGRES_DB=tidal_test \
-  -p 5432:5432 \
-  postgres:18
+docker run -d --name tidal-postgres -e POSTGRES_USER=rotational -e POSTGRES_PASSWORD=theeaglefliesatdawn -e POSTGRES_DB=tidal_test -p 5432:5432 postgres:18
 ```
 
 Then run the Postgres suites:
