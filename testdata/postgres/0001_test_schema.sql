@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS users (
+    id          BYTEA PRIMARY KEY,
+    name        VARCHAR(255) NOT NULL,
+    dob         DATE DEFAULT NULL,
+    email       VARCHAR(255) NOT NULL UNIQUE,
+    password    VARCHAR(255) NOT NULL,
+    verified    BOOLEAN NOT NULL DEFAULT FALSE,
+    last_seen   TIMESTAMPTZ DEFAULT NULL,
+    created     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    modified    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

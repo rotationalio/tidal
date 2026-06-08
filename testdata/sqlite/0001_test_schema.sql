@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS users (
+    id          BLOB PRIMARY KEY,
+    name        TEXT NOT NULL,
+    dob         DATE DEFAULT NULL,
+    email       TEXT NOT NULL UNIQUE,
+    password    TEXT NOT NULL,
+    verified    BOOLEAN NOT NULL DEFAULT FALSE,
+    last_seen   DATETIME DEFAULT NULL,
+    created     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    modified    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
