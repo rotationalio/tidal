@@ -33,16 +33,16 @@ Embed the migration files into your package and load them into a `Migrations` sl
 package db
 
 import (
-	"embed"
+ "embed"
 
-	"go.rtnl.ai/tidal/migrations"
+ "go.rtnl.ai/tidal/migrations"
 )
 
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
 func Migrations() (migrations.Migrations, error) {
-	return migrations.Load(migrationFS)
+ return migrations.Load(migrationFS)
 }
 ```
 
@@ -55,17 +55,17 @@ ctx := context.Background()
 
 m, err := migrations.Load(migrationFS)
 if err != nil {
-	return err
+ return err
 }
 
 // Postgres: uses an advisory lock so only one instance applies migrations at a time.
 if err := m.ApplyPostgres(ctx, db, "v1.4.0"); err != nil {
-	return err
+ return err
 }
 
 // SQLite: applies all pending migrations in a single write transaction.
 if err := m.ApplySQLite(ctx, db, "v1.4.0"); err != nil {
-	return err
+ return err
 }
 ```
 
@@ -78,11 +78,11 @@ Use `LastApplied` to read the most recently applied migration record (ID, name, 
 ```go
 last, err := migrations.LastApplied(ctx, db)
 if err != nil {
-	return err
+ return err
 }
 
 fmt.Printf("schema at migration %d (%s), applied %s with %s\n",
-	last.ID, last.Name, last.Applied, last.Version)
+ last.ID, last.Name, last.Applied, last.Version)
 ```
 
 ## Fields
@@ -106,41 +106,41 @@ A `Model` supplies its values via `Params` (for `INSERT`/`UPDATE`) and reads the
 package models
 
 import (
-	"database/sql"
+ "database/sql"
 
-	"go.rtnl.ai/tidal"
-	"go.rtnl.ai/tidal/fields"
+ "go.rtnl.ai/tidal"
+ "go.rtnl.ai/tidal/fields"
 )
 
 type Document struct {
-	tidal.BaseModel
-	Metadata fields.JSONB           // NOT NULL JSON column
-	Settings fields.NullJSONB       // nullable JSON column
-	Tags     fields.StringArray     // NOT NULL array column
-	Authors  fields.NullStringArray // nullable array column
+ tidal.BaseModel
+ Metadata fields.JSONB           // NOT NULL JSON column
+ Settings fields.NullJSONB       // nullable JSON column
+ Tags     fields.StringArray     // NOT NULL array column
+ Authors  fields.NullStringArray // nullable array column
 }
 
 // Ensure the model satisfies the tidal.Model interface.
 var _ tidal.Model = (*Document)(nil)
 
 func (d *Document) Fields(tidal.Operation) []string {
-	return []string{"id", "metadata", "settings", "tags", "authors", "created", "modified"}
+ return []string{"id", "metadata", "settings", "tags", "authors", "created", "modified"}
 }
 
 func (d *Document) Params(op tidal.Operation) []sql.NamedArg {
-	return []sql.NamedArg{
-		sql.Named("id", d.ID),
-		sql.Named("metadata", d.Metadata),
-		sql.Named("settings", d.Settings),
-		sql.Named("tags", d.Tags),
-		sql.Named("authors", d.Authors),
-		sql.Named("created", d.Created),
-		sql.Named("modified", d.Modified),
-	}
+ return []sql.NamedArg{
+  sql.Named("id", d.ID),
+  sql.Named("metadata", d.Metadata),
+  sql.Named("settings", d.Settings),
+  sql.Named("tags", d.Tags),
+  sql.Named("authors", d.Authors),
+  sql.Named("created", d.Created),
+  sql.Named("modified", d.Modified),
+ }
 }
 
 func (d *Document) Scan(op tidal.Operation, s tidal.Scanner) error {
-	return s.Scan(&d.ID, &d.Metadata, &d.Settings, &d.Tags, &d.Authors, &d.Created, &d.Modified)
+ return s.Scan(&d.ID, &d.Metadata, &d.Settings, &d.Tags, &d.Authors, &d.Created, &d.Modified)
 }
 ```
 
@@ -157,7 +157,7 @@ doc := &Document{}
 
 // Encode a Go value into the JSONB field before saving.
 if err := doc.Metadata.MarshalFrom(map[string]any{"version": 2, "draft": false}); err != nil {
-	return err
+ return err
 }
 
 // ... after loading the record from the database ...
@@ -165,7 +165,7 @@ if err := doc.Metadata.MarshalFrom(map[string]any{"version": 2, "draft": false})
 // Decode the JSONB field back into a Go value.
 var meta map[string]any
 if err := doc.Metadata.UnmarshalTo(&meta); err != nil {
-	return err
+ return err
 }
 ```
 
@@ -185,16 +185,16 @@ doc := &Document{}
 
 // Set a non-null value.
 if err := doc.Settings.MarshalFrom(map[string]bool{"public": true}); err != nil {
-	return err
+ return err
 }
 
 // ... after loading the record ...
 
 if doc.Settings.Valid {
-	var settings map[string]bool
-	if err := doc.Settings.UnmarshalTo(&settings); err != nil {
-		return err
-	}
+ var settings map[string]bool
+ if err := doc.Settings.UnmarshalTo(&settings); err != nil {
+  return err
+ }
 }
 ```
 
@@ -206,13 +206,13 @@ if doc.Settings.Valid {
 
 ```go
 doc := &Document{
-	Tags: fields.StringArray{"go", "sql", "database"},
+ Tags: fields.StringArray{"go", "sql", "database"},
 }
 
 // ... after loading the record ...
 
 for _, tag := range doc.Tags {
-	fmt.Println(tag)
+ fmt.Println(tag)
 }
 ```
 
@@ -222,19 +222,61 @@ for _, tag := range doc.Tags {
 
 ```go
 doc := &Document{
-	Authors: fields.NullStringArray{
-		StringArray: fields.StringArray{"alice", "bob"},
-		Valid:       true,
-	},
+ Authors: fields.NullStringArray{
+  StringArray: fields.StringArray{"alice", "bob"},
+  Valid:       true,
+ },
 }
 
 // ... after loading the record ...
 
 if doc.Authors.Valid {
-	for _, author := range doc.Authors.StringArray {
-		fmt.Println(author)
-	}
+ for _, author := range doc.Authors.StringArray {
+  fmt.Println(author)
+ }
 }
 ```
 
 A zero-value `NullStringArray{}` (or one with `Valid: false`) is written to the database as SQL `NULL`.
+
+## Testing
+
+Run the full suite from the repository root:
+
+```bash
+go test ./... -race
+
+# Ignore go test cache and use verbose mode:
+go test ./... -count=1 -race -v
+```
+
+SQLite tests need no setup. Each test suite creates its own database file in a temporary directory.
+
+Postgres tests are skipped unless a database URL is set. Start a local Postgres instance (matching CI):
+
+```bash
+docker run -d --name tidal-postgres \
+  -e POSTGRES_USER=rotational \
+  -e POSTGRES_PASSWORD=theeaglefliesatdawn \
+  -e POSTGRES_DB=tidal_test \
+  -p 5432:5432 \
+  postgres:18
+```
+
+Then run the Postgres suites:
+
+```bash
+export POSTGRES_DATABASE_URL="postgres://rotational:theeaglefliesatdawn@localhost:5432/tidal_test?sslmode=disable"
+go test ./... -race -run Postgres
+```
+
+Stop the container when finished:
+
+```bash
+docker stop tidal-postgres && docker rm tidal-postgres
+```
+
+Database URLs are read from the environment in this order:
+
+- Postgres: `POSTGRES_DATABASE_URL`, then `TEST_DATABASE_URL`, then `TIDAL_DATABASE_URL`, then `DATABASE_URL`
+- SQLite: `SQLITE_DATABASE_URL`, then `TEST_DATABASE_URL`, then `TIDAL_DATABASE_URL`, then `DATABASE_URL`
