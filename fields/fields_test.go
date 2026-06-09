@@ -21,7 +21,8 @@ type FieldsSqliteTestSuite struct {
 func TestSQLiteFields(t *testing.T) {
 	s := &FieldsSqliteTestSuite{}
 	if _, err := s.ResolveDSN(""); err != nil {
-		t.Skipf("skipping fields sqlite tests because of DSN resolution error: %v", err)
+		// Fail the test when DSN is not resolved
+		t.Fatalf("failed fields sqlite tests because of DSN resolution error: %v", err)
 	}
 
 	// Run the tests
@@ -70,7 +71,8 @@ type FieldsPostgresTestSuite struct {
 func TestPostgresFields(t *testing.T) {
 	s := &FieldsPostgresTestSuite{}
 	if _, err := s.ResolveDSN(""); err != nil {
-		t.Skipf("skipping fields postgres tests because of DSN resolution error: %v", err)
+		// Fail the test when DSN is not resolved
+		t.Fatalf("failed fields postgres tests because of DSN resolution error: %v", err)
 	}
 
 	// Run the tests

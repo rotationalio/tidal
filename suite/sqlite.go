@@ -13,6 +13,10 @@ import (
 
 type SQLiteSuite struct {
 	DatabaseSuite
+
+	// dbPath is the file path for the per-suite SQLite database. Each suite
+	// instance gets its own path so parallel test packages do not share a file.
+	dbPath string
 }
 
 func (s *SQLiteSuite) SetupSuite() {
@@ -30,6 +34,10 @@ func (s *SQLiteSuite) AfterTest(suiteName, testName string) {
 func (s *SQLiteSuite) CreateDB(databaseURL string) {
 	var err error
 	require := s.Require()
+
+	if databaseURL == "" && s.dbPath == "" {
+		s.dbPath = filepath.Join(s.T().TempDir(), "test.db")
+	}
 
 	s.dsn, err = s.ResolveDSN(databaseURL)
 	require.NoError(err, "could not resolve database URL")
@@ -77,10 +85,16 @@ func (s *SQLiteSuite) ResolveDSN(databaseURL string) (uri *dsn.DSN, err error) {
 		return uri, nil
 	}
 
-	// Otherwise create a new database in a temporary directory.
+	// Otherwise use the per-suite path assigned in CreateDB.
+	path := s.dbPath
+	if path == "" {
+		// Pre-suite DSN probe only; no database is opened at this point.
+		path = filepath.Join(os.TempDir(), "tidal-sqlite-probe.db")
+	}
+
 	return &dsn.DSN{
 		Provider: "sqlite3",
-		Path:     filepath.Join(os.TempDir(), "tidal-sqlite-test.db"),
+		Path:     path,
 	}, nil
 }
 

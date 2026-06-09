@@ -20,7 +20,8 @@ type SQLiteTestSuite struct {
 func TestSQLite(t *testing.T) {
 	s := &SQLiteTestSuite{}
 	if _, err := s.ResolveDSN(""); err != nil {
-		t.Skipf("skipping fields sqlite tests because of DSN resolution error: %v", err)
+		// Fail the test when DSN is not resolved
+		t.Fatalf("failed fields sqlite tests because of DSN resolution error: %v", err)
 	}
 
 	// Run the tests

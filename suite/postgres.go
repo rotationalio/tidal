@@ -1,8 +1,11 @@
 package suite
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
+	"fmt"
 
 	"go.rtnl.ai/x/dsn"
 
@@ -11,11 +14,33 @@ import (
 
 type PostgresSuite struct {
 	DatabaseSuite
+
+	// dbName is a dedicated database for this suite instance so parallel test
+	// packages do not share the same PostgreSQL database.
+	dbName string
 }
 
 func (s *PostgresSuite) SetupSuite() {
 	s.T().Log("setting up the postgres test suite")
 	s.CreateDB("")
+}
+
+func (s *PostgresSuite) TearDownSuite() {
+	s.T().Log("tearing down the postgres test suite")
+
+	require := s.Require()
+	if s.DB != nil {
+		s.DropTables()
+		require.NoError(s.Close(), "could not close connection to database")
+		s.DB = nil
+	}
+
+	if s.dbName != "" {
+		s.dropSuiteDatabase()
+		s.dbName = ""
+	}
+
+	s.dsn = nil
 }
 
 func (s *PostgresSuite) AfterTest(suiteName, testName string) {
@@ -29,6 +54,14 @@ func (s *PostgresSuite) CreateDB(databaseURL string) {
 
 	s.dsn, err = s.ResolveDSN(databaseURL)
 	require.NoError(err, "could not resolve database URL")
+
+	if databaseURL == "" {
+		if s.dbName == "" {
+			s.provisionSuiteDatabase()
+		} else {
+			s.dsn.Path = s.dbName
+		}
+	}
 
 	s.T().Logf("database dsn resolved to %s", s.dsn.String())
 
@@ -45,6 +78,51 @@ func (s *PostgresSuite) CreateDB(databaseURL string) {
 	s.DB.SetConnMaxIdleTime(pgopts.ConnMaxIdleTime)
 
 	require.NoError(s.DB.Ping(), "could not ping database")
+}
+
+func (s *PostgresSuite) provisionSuiteDatabase() {
+	require := s.Require()
+
+	var suffix [4]byte
+	_, err := rand.Read(suffix[:])
+	require.NoError(err, "could not generate database name suffix")
+
+	baseDB := s.dsn.Path
+	s.dbName = fmt.Sprintf("%s_%s", baseDB, hex.EncodeToString(suffix[:]))
+
+	admin := s.dsn.Clone()
+	admin.Path = "postgres"
+
+	connStr, _, err := dsn.PGConnectionOptions(admin, nil)
+	require.NoError(err, "could not get PostgreSQL admin connection options")
+
+	adminDB, err := sql.Open("postgres", connStr)
+	require.NoError(err, "could not open admin database connection")
+	defer adminDB.Close()
+
+	require.NoError(adminDB.Ping(), "could not ping admin database")
+	_, err = adminDB.Exec("CREATE DATABASE " + s.dbName)
+	require.NoError(err, "could not create suite database")
+
+	s.dsn.Path = s.dbName
+}
+
+func (s *PostgresSuite) dropSuiteDatabase() {
+	require := s.Require()
+
+	admin := s.dsn.Clone()
+	admin.Path = "postgres"
+
+	connStr, _, err := dsn.PGConnectionOptions(admin, nil)
+	require.NoError(err, "could not get PostgreSQL admin connection options")
+
+	adminDB, err := sql.Open("postgres", connStr)
+	require.NoError(err, "could not open admin database connection")
+	defer adminDB.Close()
+
+	require.NoError(adminDB.Ping(), "could not ping admin database")
+	_, err = adminDB.Exec("DROP DATABASE IF EXISTS " + s.dbName)
+	require.NoError(err, "could not drop suite database")
 }
 
 const truncateQuery = `
@@ -71,6 +149,32 @@ func (s *PostgresSuite) ResetDB() {
 		require.NoError(err, "could not truncate database")
 	} else {
 		s.T().Log("cannot reset the postgres database because s.DB is nil")
+	}
+}
+
+const dropTableQuery = `
+DO $$
+DECLARE
+	l_stmt TEXT;
+BEGIN
+	SELECT 'DROP TABLE IF EXISTS ' || string_agg(format('%I.%I', schemaname, tablename), ', ') || ' CASCADE'
+	INTO l_stmt
+	FROM pg_tables
+	WHERE schemaname = 'public';
+
+	IF l_stmt IS NOT NULL THEN
+		EXECUTE l_stmt;
+	END IF;
+END $$;
+`
+
+func (s *PostgresSuite) DropTables() {
+	if s.DB != nil {
+		require := s.Require()
+		_, err := s.DB.Exec(dropTableQuery)
+		require.NoError(err, "could not drop tables")
+	} else {
+		s.T().Log("cannot drop tables because s.DB is nil")
 	}
 }
 
