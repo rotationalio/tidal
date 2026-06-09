@@ -18,45 +18,8 @@ type PostgresTestSuite struct {
 var postgresFS embed.FS
 
 func TestPostgres(t *testing.T) {
-	s := &PostgresTestSuite{}
-	if _, err := s.ResolveDSN(""); err != nil {
-		// Fail the test when DSN is not resolved
-		t.Fatalf("failed fields postgres tests because of DSN resolution error: %v", err)
-	}
-
 	// Run the tests
-	suite.Run(t, s)
-}
-
-const dropTableQuery = `
-DO $$
-DECLARE
-	l_stmt TEXT;
-BEGIN
-	SELECT 'DROP TABLE IF EXISTS ' || string_agg(format('%I.%I', schemaname, tablename), ', ') || ' CASCADE'
-	INTO l_stmt
-	FROM pg_tables
-	WHERE schemaname = 'public';
-
-	IF l_stmt IS NOT NULL THEN
-		EXECUTE l_stmt;
-	END IF;
-END $$;
-`
-
-func (s *PostgresTestSuite) ResetDB() {
-	if s.DB != nil {
-		require := s.Require()
-		_, err := s.DB.Exec(dropTableQuery)
-		require.NoError(err, "could not drop tables")
-	} else {
-		s.T().Log("cannot reset the postgres database because s.DB is nil")
-	}
-}
-
-func (s *PostgresTestSuite) AfterTest(suiteName, testName string) {
-	s.T().Logf("resetting the postgres test suite after test %s.%s", suiteName, testName)
-	s.ResetDB()
+	suite.Run(t, &PostgresTestSuite{})
 }
 
 func (s *PostgresTestSuite) TestMigrations() {

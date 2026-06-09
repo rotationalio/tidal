@@ -27,7 +27,7 @@ type SQLiteProvider struct {
 	tmpDir string
 }
 
-func (p *SQLiteProvider) ResolveDSN(databaseURL string) (uri *dsn.DSN, err error) {
+func (p *SQLiteProvider) ResolveDSN(databaseURL string) (_ *dsn.DSN, err error) {
 	// If the database URL is not specified load it from the environment variable.
 	if databaseURL == "" {
 		databaseURL = DatabaseURL(SQLITE_DATABASE_URL, TEST_DATABASE_URL, TIDAL_DATABASE_URL)
@@ -35,19 +35,19 @@ func (p *SQLiteProvider) ResolveDSN(databaseURL string) (uri *dsn.DSN, err error
 
 	// Attempt to parse the database URL.
 	if databaseURL != "" {
-		if uri, err = dsn.Parse(databaseURL); err != nil {
+		if p.dsn, err = dsn.Parse(databaseURL); err != nil {
 			return nil, err
 		}
 
-		if uri.Provider != dsn.SQLite3 {
+		if p.dsn.Provider != dsn.SQLite3 {
 			return nil, errors.Join(ErrInvalidProvider, ErrSqliteRequired)
 		}
 
-		return uri, nil
+		return p.dsn, nil
 	}
 
 	// Otherwise return the DSN if it exists already.
-	if p.dsn != nil {
+	if p.dsn == nil {
 		p.tmpDir = os.TempDir()
 		p.dsn = &dsn.DSN{
 			Provider: dsn.SQLite3,
