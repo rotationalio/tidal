@@ -1,8 +1,10 @@
 package suite
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -13,60 +15,19 @@ import (
 
 type SQLiteSuite struct {
 	DatabaseSuite
-
-	// dbPath is the file path for the per-suite SQLite database. Each suite
-	// instance gets its own path so parallel test packages do not share a file.
-	dbPath string
 }
 
 func (s *SQLiteSuite) SetupSuite() {
-	s.CreateDB("")
+	s.DatabaseSuite.Provider = &SQLiteProvider{}
+	s.DatabaseSuite.SetupSuite()
 }
 
-func (s *SQLiteSuite) AfterTest(suiteName, testName string) {
-	s.ResetDB()
+type SQLiteProvider struct {
+	dsn    *dsn.DSN
+	tmpDir string
 }
 
-// Create a new SQlite3 database with the specified database URL. If the database URL
-// is empty, it will be loaded from the environment variable SQLITE_DATABASE_URL. If
-// there is no environment variable, it will create a new database in a temporary
-// directory.
-func (s *SQLiteSuite) CreateDB(databaseURL string) {
-	var err error
-	require := s.Require()
-
-	if databaseURL == "" && s.dbPath == "" {
-		s.dbPath = filepath.Join(s.T().TempDir(), "test.db")
-	}
-
-	s.dsn, err = s.ResolveDSN(databaseURL)
-	require.NoError(err, "could not resolve database URL")
-
-	s.T().Logf("database dsn resolved to %s", s.dsn.String())
-
-	s.DB, err = sql.Open("sqlite3", s.dsn.Path)
-	require.NoError(err, "could not open database")
-
-	require.NoError(s.DB.Ping(), "could not ping database")
-}
-
-// Resets the SQlite3 database by deleting the database file and calling CreateDB again.
-func (s *SQLiteSuite) ResetDB() {
-	if s.dsn != nil && s.DB != nil {
-		require := s.Require()
-		require.NoError(s.Close(), "could not close connection to database")
-		require.NoError(os.Remove(s.dsn.Path), "could not delete database file")
-		s.CreateDB(s.dsn.String())
-	} else {
-		s.T().Log("cannot reset the sqlite database because s.dsn or s.DB is nil")
-	}
-}
-
-// Resolves the database URL from the environment variable SQLITE_DATABASE_URL. If
-// the database URL is not specified, it will be loaded from the environment variable
-// TEST_DATABASE_URL or TIDAL_DATABASE_URL or DATABASE_URL. If none are found, it will
-// create a new DSN with a SQLite3 provider and a path in a temporary directory.
-func (s *SQLiteSuite) ResolveDSN(databaseURL string) (uri *dsn.DSN, err error) {
+func (p *SQLiteProvider) ResolveDSN(databaseURL string) (uri *dsn.DSN, err error) {
 	// If the database URL is not specified load it from the environment variable.
 	if databaseURL == "" {
 		databaseURL = DatabaseURL(SQLITE_DATABASE_URL, TEST_DATABASE_URL, TIDAL_DATABASE_URL)
@@ -85,34 +46,174 @@ func (s *SQLiteSuite) ResolveDSN(databaseURL string) (uri *dsn.DSN, err error) {
 		return uri, nil
 	}
 
-	// Otherwise use the per-suite path assigned in CreateDB.
-	path := s.dbPath
-	if path == "" {
-		// Pre-suite DSN probe only; no database is opened at this point.
-		path = filepath.Join(os.TempDir(), "tidal-sqlite-probe.db")
+	// Otherwise return the DSN if it exists already.
+	if p.dsn != nil {
+		p.tmpDir = os.TempDir()
+		p.dsn = &dsn.DSN{
+			Provider: dsn.SQLite3,
+			Path:     filepath.Join(p.tmpDir, "tidal-test.db"),
+		}
 	}
-
-	return &dsn.DSN{
-		Provider: "sqlite3",
-		Path:     path,
-	}, nil
+	return p.dsn, nil
 }
 
-const rowIDCountQuery = `SELECT COUNT(rowid) FROM `
+func (p *SQLiteProvider) Connect(ctx context.Context, uri *dsn.DSN) (db *sql.DB, err error) {
+	if uri.Provider != dsn.SQLite3 {
+		return nil, errors.Join(ErrInvalidProvider, ErrSqliteRequired)
+	}
 
-func (s *SQLiteSuite) Count(table string) (count int) {
-	require := s.Require()
-	query := rowIDCountQuery + table
+	if db, err = sql.Open("sqlite3", uri.String()); err != nil {
+		return nil, fmt.Errorf("could not connect to database: %w", err)
+	}
 
-	tx, cancel := s.BeginTx(&sql.TxOptions{
-		ReadOnly:  true,
-		Isolation: sql.LevelDefault,
-	})
-	defer cancel()
+	if err = db.PingContext(ctx); err != nil {
+		return nil, fmt.Errorf("could not ping database: %w", err)
+	}
+
+	return db, nil
+}
+
+func (p *SQLiteProvider) CreateDB(ctx context.Context, uri *dsn.DSN) (*dsn.DSN, error) {
+	// The database is created by the SQLite driver when the connection is opened.
+	// No additional action is needed to create the database.
+	return uri, nil
+}
+
+func (p *SQLiteProvider) DropDB(ctx context.Context, uri *dsn.DSN) (err error) {
+	// Delete the database file.
+	if rmerr := os.Remove(p.dsn.Path); rmerr != nil {
+		err = errors.Join(err, rmerr)
+	}
+
+	// Delete the temporary directory.
+	if p.tmpDir != "" {
+		if rmerr := os.RemoveAll(p.tmpDir); rmerr != nil {
+			err = errors.Join(err, rmerr)
+		}
+	}
+	return err
+}
+
+func (p *SQLiteProvider) DropTables(ctx context.Context, conn *sql.DB) (err error) {
+	var tx *sql.Tx
+	if tx, err = conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
+		return fmt.Errorf("could not begin transaction: %w", err)
+	}
 	defer tx.Rollback()
 
-	row := tx.QueryRow(query)
-	require.NoError(row.Scan(&count), "could not scan count")
+	var tables []string
+	if tables, err = p.listTables(tx); err != nil {
+		return fmt.Errorf("could not list tables: %w", err)
+	}
 
-	return count
+	// Disable foreign key constraints.
+	var fk bool
+	if fk, err = p.foreignKeysEnabled(tx); err != nil {
+		return fmt.Errorf("could not check foreign keys: %w", err)
+	}
+
+	if fk {
+		// Temporarily disable foreign key constraints.
+		if _, err = tx.Exec("PRAGMA foreign_keys = OFF"); err != nil {
+			return fmt.Errorf("could not set foreign keys to off: %w", err)
+		}
+	}
+
+	for _, table := range tables {
+		if _, err = tx.Exec("DROP TABLE IF EXISTS " + table); err != nil {
+			return fmt.Errorf("could not drop table %s: %w", table, err)
+		}
+	}
+
+	if fk {
+		// Re-enable foreign key constraints.
+		if _, err = tx.Exec("PRAGMA foreign_keys = ON"); err != nil {
+			return fmt.Errorf("could not set foreign keys to on: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (p *SQLiteProvider) TruncateTables(ctx context.Context, conn *sql.DB) (err error) {
+	var tx *sql.Tx
+	if tx, err = conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
+		return fmt.Errorf("could not begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var tables []string
+	if tables, err = p.listTables(tx); err != nil {
+		return fmt.Errorf("could not list tables: %w", err)
+	}
+
+	// Disable foreign key constraints.
+	var fk bool
+	if fk, err = p.foreignKeysEnabled(tx); err != nil {
+		return fmt.Errorf("could not check foreign keys: %w", err)
+	}
+
+	if fk {
+		// Temporarily disable foreign key constraints.
+		if _, err = tx.Exec("PRAGMA foreign_keys = OFF"); err != nil {
+			return fmt.Errorf("could not set foreign keys to off: %w", err)
+		}
+	}
+
+	for _, table := range tables {
+		// Delete the table contents.
+		if _, err = tx.Exec("DELETE FROM " + table); err != nil {
+			return fmt.Errorf("could not truncate table %s: %w", table, err)
+		}
+
+		// Restart the auto-increment counter if it exists.
+		if _, err = tx.Exec("DELETE FROM sqlite_sequence WHERE name = ?", table); err != nil {
+			return fmt.Errorf("could not restart auto-increment counter for table %s: %w", table, err)
+		}
+	}
+
+	if fk {
+		// Re-enable foreign key constraints.
+		if _, err = tx.Exec("PRAGMA foreign_keys = ON"); err != nil {
+			return fmt.Errorf("could not set foreign keys to on: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+const rowIDCountQuery = `SELECT COUNT(rowid) AS count FROM `
+
+func (p *SQLiteProvider) Count(tx *sql.Tx, table string) (count int, err error) {
+	query := rowIDCountQuery + table
+	row := tx.QueryRow(query)
+	err = row.Scan(&count)
+	return count, err
+}
+
+const sqliteListTablesQuery = `SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`
+
+func (p *SQLiteProvider) listTables(tx *sql.Tx) (tables []string, err error) {
+	var rows *sql.Rows
+	if rows, err = tx.Query(sqliteListTablesQuery); err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tables = make([]string, 0)
+	for rows.Next() {
+		var table string
+		if err = rows.Scan(&table); err != nil {
+			return nil, err
+		}
+		tables = append(tables, table)
+	}
+
+	return tables, rows.Err()
+}
+
+func (p *SQLiteProvider) foreignKeysEnabled(tx *sql.Tx) (enabled bool, err error) {
+	row := tx.QueryRow("PRAGMA foreign_keys")
+	err = row.Scan(&enabled)
+	return enabled, err
 }

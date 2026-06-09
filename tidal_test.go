@@ -1,93 +1,48 @@
 package tidal_test
 
 import (
-	"context"
 	"embed"
-	"os"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/tidal/migrations"
 	"go.rtnl.ai/tidal/suite"
 )
 
-func TestPostgres(t *testing.T) {
-	s := &PostgresTestSuite{}
-	if _, err := s.ResolveDSN(""); err != nil {
-		// Fail the test when DSN is not resolved
-		t.Fatalf("failed postgres tests because of DSN resolution error: %v", err)
-	}
-
-	// Run the tests
-	suite.Run(t, s)
-}
-
-func TestSQLite(t *testing.T) {
-	s := &SQLiteTestSuite{}
-	if _, err := s.ResolveDSN(""); err != nil {
-		// Fail the test when DSN is not resolved
-		t.Fatalf("failed sqlite tests because of DSN resolution error: %v", err)
-	}
-
-	// Run the tests
-	suite.Run(t, s)
+type TidalTestSuite struct {
+	suite.DatabaseSuite
 }
 
 //go:embed testdata/postgres
 var postgresFS embed.FS
 
-type PostgresTestSuite struct {
-	suite.PostgresSuite
-}
+func TestTidalPostgres(t *testing.T) {
+	var err error
+	s := &TidalTestSuite{}
+	s.Provider = &suite.PostgresProvider{}
+	s.Migrations, err = migrations.Load(postgresFS)
+	require.NoError(t, err, "could not load postgres migrations")
 
-func (s *PostgresTestSuite) CreateDB() {
-	s.PostgresSuite.CreateDB("")
+	_, err = s.ResolveDSN("")
+	require.NoError(t, err, "could not resolve postgres DSN")
 
-	require := s.Require()
-	migrations, err := migrations.Load(postgresFS)
-	require.NoError(err)
-
-	err = migrations.ApplyPostgres(context.Background(), s.DB, "test")
-	require.NoError(err)
-}
-
-func (s *PostgresTestSuite) SetupSuite() {
-	s.DropTables()
-	s.CreateDB()
+	// Run the tests
+	suite.Run(t, s)
 }
 
 //go:embed testdata/sqlite
 var sqliteFS embed.FS
 
-type SQLiteTestSuite struct {
-	suite.SQLiteSuite
-}
+func TestSQLite(t *testing.T) {
+	var err error
+	s := &TidalTestSuite{}
+	s.Provider = &suite.SQLiteProvider{}
+	s.Migrations, err = migrations.Load(sqliteFS)
+	require.NoError(t, err, "could not load sqlite migrations")
 
-func (s *SQLiteTestSuite) CreateDB() {
-	s.SQLiteSuite.CreateDB("")
+	_, err = s.ResolveDSN("")
+	require.NoError(t, err, "could not resolve sqlite DSN")
 
-	require := s.Require()
-	migrations, err := migrations.Load(sqliteFS)
-	require.NoError(err)
-
-	err = migrations.ApplySQLite(context.Background(), s.DB, "test")
-	require.NoError(err)
-}
-
-func (s *SQLiteTestSuite) ResetDB() {
-	if s.DB != nil {
-		require := s.Require()
-		require.NoError(s.DB.Close(), "could not close database")
-		require.NoError(os.Remove(s.DSN().Path), "could not delete database file")
-		s.CreateDB()
-	} else {
-		s.T().Log("cannot reset the sqlite database because s.DB is nil")
-	}
-}
-
-func (s *SQLiteTestSuite) SetupSuite() {
-	s.CreateDB()
-}
-
-func (s *SQLiteTestSuite) AfterTest(suiteName, testName string) {
-	s.ResetDB()
+	// Run the tests
+	suite.Run(t, s)
 }

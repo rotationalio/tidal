@@ -15,8 +15,7 @@ func (s *FieldsSqliteTestSuite) TestStringArray() {
 	s.Run("HappyPath", func() {
 		require := s.Require()
 
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		params := []any{
@@ -41,8 +40,7 @@ func (s *FieldsSqliteTestSuite) TestStringArray() {
 	s.Run("Null", func() {
 		require := s.Require()
 
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		result, err := tx.Exec("INSERT INTO testing (alpha, bravo) VALUES ('[]', NULL)")
@@ -62,8 +60,7 @@ func (s *FieldsSqliteTestSuite) TestStringArray() {
 	s.Run("Nil", func() {
 		require := s.Require()
 
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		// Insert a new record into the database.
@@ -98,8 +95,7 @@ func (s *FieldsPostgresTestSuite) TestStringArray() {
 	s.Run("HappyPath", func() {
 		require := s.Require()
 
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		params := []any{
@@ -129,8 +125,7 @@ func (s *FieldsPostgresTestSuite) TestStringArray() {
 	s.Run("Null", func() {
 		require := s.Require()
 
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		row := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ('[]', NULL, '[]', NULL) RETURNING id")
@@ -153,8 +148,7 @@ func (s *FieldsPostgresTestSuite) TestStringArray() {
 	s.Run("Nil", func() {
 		require := s.Require()
 
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		params := []any{
@@ -190,8 +184,7 @@ func (s *FieldsSqliteTestSuite) TestNullStringArray() {
 	s.Run("HappyPath", func() {
 		require := s.Require()
 
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		params := []any{
@@ -216,8 +209,7 @@ func (s *FieldsSqliteTestSuite) TestNullStringArray() {
 	s.Run("Null", func() {
 		require := s.Require()
 
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		result, err := tx.Exec("INSERT INTO testing (alpha, bravo) VALUES ('null', NULL)")
@@ -248,8 +240,7 @@ func (s *FieldsPostgresTestSuite) TestNullStringArray() {
 	s.Run("HappyPath", func() {
 		require := s.Require()
 
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		params := []any{
@@ -282,8 +273,7 @@ func (s *FieldsPostgresTestSuite) TestNullStringArray() {
 	s.Run("Null", func() {
 		require := s.Require()
 
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		params := []any{
