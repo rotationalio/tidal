@@ -45,7 +45,7 @@ jobs:
         env:
           POSTGRES_USER: rotational
           POSTGRES_PASSWORD: theeaglefliesatdawn
-          POSTGRES_DB: tidal_test
+          POSTGRES_DB: postgres
         ports:
           - 5432:5432
         options: >-
@@ -57,7 +57,7 @@ jobs:
       GOPATH: ${{ github.workspace }}/go
       GOBIN: ${{ github.workspace }}/go/bin
       GOTEST_GITHUB_ACTIONS: 1
-      POSTGRES_DATABASE_URL: "postgres://rotational:theeaglefliesatdawn@localhost:5432/tidal_test?sslmode=disable"
+      POSTGRES_DATABASE_URL: "postgres://rotational:theeaglefliesatdawn@localhost:5432/postgres?sslmode=disable"
     defaults:
       run:
         working-directory: ${{ env.GOPATH }}/src/go.rtnl.ai/tidal
