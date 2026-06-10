@@ -1,155 +1,139 @@
 package suite
 
 import (
-	"crypto/rand"
+	"context"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 
-	"go.rtnl.ai/x/dsn"
-
 	_ "github.com/lib/pq"
+	"go.rtnl.ai/x/dsn"
+	"go.rtnl.ai/x/randstr"
 )
 
 type PostgresSuite struct {
 	DatabaseSuite
-
-	// dbName is a dedicated database for this suite instance so parallel test
-	// packages do not share the same PostgreSQL database.
-	dbName string
 }
 
 func (s *PostgresSuite) SetupSuite() {
-	s.T().Log("setting up the postgres test suite")
-	s.CreateDB("")
+	s.DatabaseSuite.Provider = &PostgresProvider{}
+	s.DatabaseSuite.SetupSuite()
 }
 
-func (s *PostgresSuite) TearDownSuite() {
-	s.T().Log("tearing down the postgres test suite")
-
-	require := s.Require()
-	if s.DB != nil {
-		s.DropTables()
-		require.NoError(s.Close(), "could not close connection to database")
-		s.DB = nil
-	}
-
-	if s.dbName != "" {
-		s.dropSuiteDatabase()
-		s.dbName = ""
-	}
-
-	s.dsn = nil
+// The PostgresProvider uses the DSN it gets from the environment or the test suite as
+// an admin DSN to connect to the database. If the db in the DSN is specifed as
+// 'postgres' (e.g. the default admin database), then a new database is created for the
+// test suite alone. This prevents multiple suites running in parallel from interfering
+// with each other. Otherwise, the test suite will use the existing database.
+type PostgresProvider struct {
+	dsn   *dsn.DSN // The test database DSN created by the test suite.
+	admin *dsn.DSN // The management database DSN used to create the test database.
 }
 
-func (s *PostgresSuite) AfterTest(suiteName, testName string) {
-	s.T().Logf("resetting the postgres test suite after test %s.%s", suiteName, testName)
-	s.ResetDB()
-}
-
-func (s *PostgresSuite) CreateDB(databaseURL string) {
-	var err error
-	require := s.Require()
-
-	s.dsn, err = s.ResolveDSN(databaseURL)
-	require.NoError(err, "could not resolve database URL")
-
+func (p *PostgresProvider) ResolveDSN(databaseURL string) (_ *dsn.DSN, err error) {
+	// If the database URL is not specified load it from the environment variable.
 	if databaseURL == "" {
-		if s.dbName == "" {
-			s.provisionSuiteDatabase()
-		} else {
-			s.dsn.Path = s.dbName
+		databaseURL = DatabaseURL(POSTGRES_DATABASE_URL, TEST_DATABASE_URL, TIDAL_DATABASE_URL)
+	}
+
+	// if the database URL is still empty, then try to get the postgres env vars.
+	if databaseURL == "" {
+		if p.dsn, err = PostgresEnv(); err != nil {
+			return nil, err
+		}
+	} else {
+		if p.dsn, err = dsn.Parse(databaseURL); err != nil {
+			return nil, err
 		}
 	}
 
-	s.T().Logf("database dsn resolved to %s", s.dsn.String())
-
-	connStr, pgopts, err := dsn.PGConnectionOptions(s.dsn, nil)
-	require.NoError(err, "could not get PostgreSQL connection options")
-
-	s.DB, err = sql.Open("postgres", connStr)
-	require.NoError(err, "could not open database")
-
-	// Apply any options to the connection string.
-	s.DB.SetMaxIdleConns(pgopts.MaxIdleConns)
-	s.DB.SetMaxOpenConns(pgopts.MaxOpenConns)
-	s.DB.SetConnMaxLifetime(pgopts.ConnMaxLifetime)
-	s.DB.SetConnMaxIdleTime(pgopts.ConnMaxIdleTime)
-
-	require.NoError(s.DB.Ping(), "could not ping database")
-}
-
-func (s *PostgresSuite) provisionSuiteDatabase() {
-	require := s.Require()
-
-	var suffix [4]byte
-	_, err := rand.Read(suffix[:])
-	require.NoError(err, "could not generate database name suffix")
-
-	baseDB := s.dsn.Path
-	s.dbName = fmt.Sprintf("%s_%s", baseDB, hex.EncodeToString(suffix[:]))
-
-	admin := s.dsn.Clone()
-	admin.Path = "postgres"
-
-	connStr, _, err := dsn.PGConnectionOptions(admin, nil)
-	require.NoError(err, "could not get PostgreSQL admin connection options")
-
-	adminDB, err := sql.Open("postgres", connStr)
-	require.NoError(err, "could not open admin database connection")
-	defer adminDB.Close()
-
-	require.NoError(adminDB.Ping(), "could not ping admin database")
-	_, err = adminDB.Exec("CREATE DATABASE " + s.dbName)
-	require.NoError(err, "could not create suite database")
-
-	s.dsn.Path = s.dbName
-}
-
-func (s *PostgresSuite) dropSuiteDatabase() {
-	require := s.Require()
-
-	admin := s.dsn.Clone()
-	admin.Path = "postgres"
-
-	connStr, _, err := dsn.PGConnectionOptions(admin, nil)
-	require.NoError(err, "could not get PostgreSQL admin connection options")
-
-	adminDB, err := sql.Open("postgres", connStr)
-	require.NoError(err, "could not open admin database connection")
-	defer adminDB.Close()
-
-	require.NoError(adminDB.Ping(), "could not ping admin database")
-	_, err = adminDB.Exec("DROP DATABASE IF EXISTS " + s.dbName)
-	require.NoError(err, "could not drop suite database")
-}
-
-const truncateQuery = `
-DO $$
-DECLARE
-    l_stmt TEXT;
-BEGIN
-    SELECT 'TRUNCATE TABLE ' || string_agg(format('%I.%I', schemaname, tablename), ', ') || ' RESTART IDENTITY CASCADE'
-    INTO l_stmt
-    FROM pg_tables
-    WHERE schemaname = 'public';
-
-    IF l_stmt IS NOT NULL THEN
-        EXECUTE l_stmt;
-    END IF;
-END $$;
-`
-
-func (s *PostgresSuite) ResetDB() {
-	if s.DB != nil {
-		require := s.Require()
-
-		_, err := s.DB.Exec(truncateQuery)
-		require.NoError(err, "could not truncate database")
-	} else {
-		s.T().Log("cannot reset the postgres database because s.DB is nil")
+	if p.dsn.Provider != dsn.Postgres {
+		p.dsn = nil
+		return nil, errors.Join(ErrInvalidProvider, ErrPostgresRequired)
 	}
+
+	return p.dsn, nil
+}
+
+func (p *PostgresProvider) Connect(ctx context.Context, uri *dsn.DSN) (db *sql.DB, err error) {
+	if uri.Provider != dsn.Postgres {
+		return nil, errors.Join(ErrInvalidProvider, ErrPostgresRequired)
+	}
+
+	connStr, pgopts, err := dsn.PGConnectionOptions(uri, nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not get postgres connection options: %w", err)
+	}
+
+	if db, err = sql.Open("postgres", connStr); err != nil {
+		return nil, fmt.Errorf("could not open postgres connection: %w", err)
+	}
+
+	// Apply the connection options.
+	db.SetMaxIdleConns(pgopts.MaxIdleConns)
+	db.SetMaxOpenConns(pgopts.MaxOpenConns)
+	db.SetConnMaxLifetime(pgopts.ConnMaxLifetime)
+	db.SetConnMaxIdleTime(pgopts.ConnMaxIdleTime)
+
+	if err = db.PingContext(ctx); err != nil {
+		return nil, fmt.Errorf("could not ping database: %w", err)
+	}
+
+	return db, nil
+}
+
+func (p *PostgresProvider) CreateDB(ctx context.Context, uri *dsn.DSN) (_ *dsn.DSN, err error) {
+	// If a non-postgres database is specified then return the original DSN.
+	if uri.Path != "postgres" {
+		return uri, nil
+	}
+
+	// If the database is postgres, then create a new test database.
+	p.admin = uri
+	p.dsn = uri.Clone()
+	p.dsn.Path = "tidal_test_" + randstr.AlphaLower(5) // databases in PG must be lower case
+
+	// Create a new database.
+	var db *sql.DB
+	if db, err = p.Connect(ctx, p.admin); err != nil {
+		return nil, fmt.Errorf("could not connect to admin database: %w", err)
+	}
+
+	stmt := "CREATE DATABASE " + p.dsn.Path
+	if p.admin.User != nil && p.admin.User.Username != "" {
+		stmt += " WITH OWNER " + p.admin.User.Username
+	}
+
+	if _, err = db.ExecContext(ctx, stmt); err != nil {
+		return nil, fmt.Errorf("could not create database: %w", err)
+	}
+
+	if err = db.Close(); err != nil {
+		return nil, fmt.Errorf("could not close database connection: %w", err)
+	}
+
+	return p.dsn, nil
+}
+
+func (p *PostgresProvider) DropDB(ctx context.Context, uri *dsn.DSN) (err error) {
+	if p.admin != nil && p.dsn != nil {
+		var db *sql.DB
+		if db, err = p.Connect(ctx, p.admin); err != nil {
+			return fmt.Errorf("could not connect to admin database: %w", err)
+		}
+
+		if _, err = db.ExecContext(ctx, "DROP DATABASE "+p.dsn.Path); err != nil {
+			return fmt.Errorf("could not drop database: %w", err)
+		}
+
+		if err = db.Close(); err != nil {
+			return fmt.Errorf("could not close database connection: %w", err)
+		}
+
+		p.admin = nil
+		p.dsn = nil
+	}
+	return nil
 }
 
 const dropTableQuery = `
@@ -168,58 +152,37 @@ BEGIN
 END $$;
 `
 
-func (s *PostgresSuite) DropTables() {
-	if s.DB != nil {
-		require := s.Require()
-		_, err := s.DB.Exec(dropTableQuery)
-		require.NoError(err, "could not drop tables")
-	} else {
-		s.T().Log("cannot drop tables because s.DB is nil")
-	}
+func (p *PostgresProvider) DropTables(ctx context.Context, conn *sql.DB) error {
+	_, err := conn.Exec(dropTableQuery)
+	return err
 }
 
-// Resolves the database URL from the environment variable POSTGRES_DATABASE_URL. If
-// the database URL is not specified, it will be loaded from the environment variable
-// TEST_DATABASE_URL or TIDAL_DATABASE_URL or DATABASE_URL. If none are found, it will
-// return an error meaning that the tests should fail or be skipped.
-func (s *PostgresSuite) ResolveDSN(databaseURL string) (uri *dsn.DSN, err error) {
-	// If the database URL is not specified load it from the environment variable.
-	if databaseURL == "" {
-		databaseURL = DatabaseURL(POSTGRES_DATABASE_URL, TEST_DATABASE_URL, TIDAL_DATABASE_URL)
-	}
+const truncateQuery = `
+DO $$
+DECLARE
+    l_stmt TEXT;
+BEGIN
+    SELECT 'TRUNCATE TABLE ' || string_agg(format('%I.%I', schemaname, tablename), ', ') || ' RESTART IDENTITY CASCADE'
+    INTO l_stmt
+    FROM pg_tables
+    WHERE schemaname = 'public';
 
-	// Attempt to parse the database URL.
-	if databaseURL != "" {
-		if uri, err = dsn.Parse(databaseURL); err != nil {
-			return nil, err
-		}
+    IF l_stmt IS NOT NULL THEN
+        EXECUTE l_stmt;
+    END IF;
+END $$;
+`
 
-		if uri.Provider != dsn.Postgres {
-			return nil, errors.Join(ErrInvalidProvider, ErrPostgresRequired)
-		}
-
-		return uri, nil
-	}
-
-	// Otherwise return an error that the database URL is not specified.
-	return nil, ErrNoDatabaseURL
+func (p *PostgresProvider) TruncateTables(ctx context.Context, conn *sql.DB) error {
+	_, err := conn.Exec(truncateQuery)
+	return err
 }
 
-const countQuery = `SELECT COUNT(*) FROM `
+const countQuery = `SELECT COUNT(*) as count FROM `
 
-func (s *PostgresSuite) Count(table string) (count int) {
-	require := s.Require()
+func (p *PostgresProvider) Count(tx *sql.Tx, table string) (count int, err error) {
 	query := countQuery + table
-
-	tx, cancel := s.BeginTx(&sql.TxOptions{
-		ReadOnly:  true,
-		Isolation: sql.LevelDefault,
-	})
-	defer cancel()
-	defer tx.Rollback()
-
 	row := tx.QueryRow(query)
-	require.NoError(row.Scan(&count), "could not scan count")
-
-	return count
+	err = row.Scan(&count)
+	return count, err
 }

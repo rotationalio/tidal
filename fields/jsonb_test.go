@@ -41,8 +41,7 @@ func TestJSONB_Normalize(t *testing.T) {
 func (s *FieldsSqliteTestSuite) TestJSONB() {
 	s.Run("HappyPath", func() {
 		require := s.Require()
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		// Insert a new record into the database.
@@ -68,8 +67,7 @@ func (s *FieldsSqliteTestSuite) TestJSONB() {
 
 	s.Run("Null", func() {
 		require := s.Require()
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		// Insert a new record into the database.
@@ -91,8 +89,7 @@ func (s *FieldsSqliteTestSuite) TestJSONB() {
 
 	s.Run("Nil", func() {
 		require := s.Require()
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		// Insert a new record into the database.
@@ -120,8 +117,7 @@ func (s *FieldsSqliteTestSuite) TestJSONB() {
 func (s *FieldsPostgresTestSuite) TestJSONB() {
 	s.Run("HappyPath", func() {
 		require := s.Require()
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		params := []any{
@@ -150,8 +146,7 @@ func (s *FieldsPostgresTestSuite) TestJSONB() {
 
 	s.Run("Null", func() {
 		require := s.Require()
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		// Insert a new record into the database.
@@ -174,8 +169,7 @@ func (s *FieldsPostgresTestSuite) TestJSONB() {
 
 	s.Run("Nil", func() {
 		require := s.Require()
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		params := []any{
@@ -273,8 +267,7 @@ func TestJSONB_MarshalFrom(t *testing.T) {
 func (s *FieldsSqliteTestSuite) TestNullJSONB() {
 	s.Run("HappyPath", func() {
 		require := s.Require()
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		params := []any{
@@ -299,8 +292,7 @@ func (s *FieldsSqliteTestSuite) TestNullJSONB() {
 
 	s.Run("Null", func() {
 		require := s.Require()
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		// Insert a new record into the database.
@@ -324,8 +316,7 @@ func (s *FieldsSqliteTestSuite) TestNullJSONB() {
 func (s *FieldsPostgresTestSuite) TestNullJSONB() {
 	s.Run("HappyPath", func() {
 		require := s.Require()
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		params := []any{
@@ -358,8 +349,7 @@ func (s *FieldsPostgresTestSuite) TestNullJSONB() {
 
 	s.Run("Null", func() {
 		require := s.Require()
-		tx, cancel := s.BeginTx(nil)
-		defer cancel()
+		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
 		// Insert a new record into the database.

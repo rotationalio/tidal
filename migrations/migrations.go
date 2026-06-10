@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"go.rtnl.ai/x/dsn"
 	"go.rtnl.ai/x/typecase"
 )
 
@@ -101,6 +102,25 @@ func Load(files fs.FS) (migrations Migrations, err error) {
 }
 
 type Migrations []*Migration
+
+func (m Migrations) Apply(ctx context.Context, provider string, db *sql.DB, version string) error {
+	// Sort the migrations by ID
+	m.Sort()
+
+	// Validate the migrations
+	if err := m.Validate(); err != nil {
+		return err
+	}
+
+	switch provider {
+	case dsn.Postgres:
+		return m.ApplyPostgres(ctx, db, version)
+	case dsn.SQLite3:
+		return m.ApplySQLite(ctx, db, version)
+	default:
+		return fmt.Errorf("unimplemented provider: %s", provider)
+	}
+}
 
 // Ensure the migrations are valid and can be applied to the database.
 // This method checks to ensure that all IDs are > 0 and that the IDs are unique.
