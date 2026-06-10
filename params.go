@@ -1,3 +1,7 @@
+// TODO: create a query parser that always takes a SQL string with :name placeholders
+// and a list of sql.NamedArgs then returns a Query that is converted to the right
+// placeholder type and an []any array for the values.
+// TODO: See sqlx for an example of how they do feed forward parsing for named params.
 package tidal
 
 import (
