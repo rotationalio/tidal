@@ -19,8 +19,8 @@ type QuerySet struct {
 // TODO: the CRUD struct needs to know the PlaceholderType to use for the query.
 type CRUD[M Model] struct {
 	Queries QuerySet
-	params  map[Operation]Params
-	fields  map[Operation][]string
+	// params  map[Operation]Params // TODO: unused for now
+	fields map[Operation][]string
 }
 
 func New[M Model](table string) *CRUD[M] {
@@ -115,8 +115,7 @@ func (c *CRUD[M]) Delete(tx Tx, id sql.NamedArg) (result sql.Result, err error) 
 func (c *CRUD[M]) Fields(op Operation) (fields []string) {
 	var ok bool
 	if fields, ok = c.fields[op]; !ok {
-		var m M
-		m = Make[M]()
+		m := Make[M]()
 		fields = m.Fields(op)
 		c.fields[op] = fields
 	}

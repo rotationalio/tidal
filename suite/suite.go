@@ -235,6 +235,8 @@ func (s *DatabaseSuite) Migrate() {
 
 		s.Require().NoError(s.Migrations.Apply(ctx, s.dsn.Provider, s.DB, "test"), "failed to apply migrations")
 	} else {
+		// NOTE: this is not necessarily an error; for example a test suite may not
+		// use these fields for every test.
 		s.T().Log("cannot migrate the database because s.Migrations is nil or s.DB is nil")
 	}
 }
