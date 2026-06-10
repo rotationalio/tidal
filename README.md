@@ -252,16 +252,20 @@ go test ./... -count=1 -race -v
 
 SQLite tests need no setup. Each test suite creates its own database file in a temporary directory.
 
+```bash
+go test ./... -race -run SQLite
+```
+
 Postgres tests are skipped unless a database URL is set. Start a local Postgres instance (matching CI):
 
 ```bash
-docker run -d --name tidal-postgres -e POSTGRES_USER=rotational -e POSTGRES_PASSWORD=theeaglefliesatdawn -e POSTGRES_DB=tidal_test -p 5432:5432 postgres:18
+docker run -d --name tidal-postgres -e POSTGRES_USER=rotational -e POSTGRES_PASSWORD=theeaglefliesatdawn -e POSTGRES_DB=postgres -p 5432:5432 postgres:18
 ```
 
 Then run the Postgres suites:
 
 ```bash
-export POSTGRES_DATABASE_URL="postgres://rotational:theeaglefliesatdawn@localhost:5432/tidal_test?sslmode=disable"
+export POSTGRES_DATABASE_URL="postgres://rotational:theeaglefliesatdawn@localhost:5432/postgres?sslmode=disable"
 go test ./... -race -run Postgres
 ```
 

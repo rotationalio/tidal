@@ -91,7 +91,7 @@ func (p *PostgresProvider) CreateDB(ctx context.Context, uri *dsn.DSN) (_ *dsn.D
 	// If the database is postgres, then create a new test database.
 	p.admin = uri
 	p.dsn = uri.Clone()
-	p.dsn.Path = "tidal_test_" + randstr.AlphaNumeric(5)
+	p.dsn.Path = "tidal_test_" + randstr.AlphaLower(5) // databases in PG must be lower case
 
 	// Create a new database.
 	var db *sql.DB

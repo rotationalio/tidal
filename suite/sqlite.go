@@ -46,9 +46,12 @@ func (p *SQLiteProvider) ResolveDSN(databaseURL string) (_ *dsn.DSN, err error) 
 		return p.dsn, nil
 	}
 
-	// Otherwise return the DSN if it exists already.
+	// Otherwise create a dedicated temp directory so parallel test packages do not
+	// share the same database file.
 	if p.dsn == nil {
-		p.tmpDir = os.TempDir()
+		if p.tmpDir, err = os.MkdirTemp("", "tidal-test-*"); err != nil {
+			return nil, fmt.Errorf("could not create temporary directory: %w", err)
+		}
 		p.dsn = &dsn.DSN{
 			Provider: dsn.SQLite3,
 			Path:     filepath.Join(p.tmpDir, "tidal-test.db"),
@@ -62,7 +65,7 @@ func (p *SQLiteProvider) Connect(ctx context.Context, uri *dsn.DSN) (db *sql.DB,
 		return nil, errors.Join(ErrInvalidProvider, ErrSqliteRequired)
 	}
 
-	if db, err = sql.Open("sqlite3", uri.String()); err != nil {
+	if db, err = sql.Open("sqlite3", uri.Path); err != nil {
 		return nil, fmt.Errorf("could not connect to database: %w", err)
 	}
 
@@ -80,16 +83,18 @@ func (p *SQLiteProvider) CreateDB(ctx context.Context, uri *dsn.DSN) (*dsn.DSN, 
 }
 
 func (p *SQLiteProvider) DropDB(ctx context.Context, uri *dsn.DSN) (err error) {
-	// Delete the database file.
-	if rmerr := os.Remove(p.dsn.Path); rmerr != nil {
-		err = errors.Join(err, rmerr)
+	if p.dsn != nil {
+		if rmerr := os.Remove(p.dsn.Path); rmerr != nil && !os.IsNotExist(rmerr) {
+			err = errors.Join(err, rmerr)
+		}
 	}
 
-	// Delete the temporary directory.
+	// Remove the per-suite temp directory created by ResolveDSN.
 	if p.tmpDir != "" {
 		if rmerr := os.RemoveAll(p.tmpDir); rmerr != nil {
 			err = errors.Join(err, rmerr)
 		}
+		p.tmpDir = ""
 	}
 	return err
 }

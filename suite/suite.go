@@ -45,7 +45,7 @@ type DatabaseSuite struct {
 	Migrations  Migrations
 	Timeout     time.Duration
 
-	mu     sync.RWMutex
+	mu     sync.RWMutex // protects dsn and ctx
 	dsn    *dsn.DSN
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -60,6 +60,11 @@ type DatabaseSuite struct {
 func (s *DatabaseSuite) SetupSuite() {
 	require := s.Require()
 	require.NotNil(s.Provider, "cannot setup database suite without a provider")
+
+	// Step 0: Initialization
+	if s.Timeout == 0 {
+		s.Timeout = DefaultTimeout
+	}
 
 	// Step one: resolve the DSN either from the setting on the suite or from the
 	// environment. If this errors, the test suite will fail immediately.
@@ -106,7 +111,9 @@ func (s *DatabaseSuite) TearDownSuite() {
 
 		// Drop the database
 		s.T().Log("dropping database")
-		if err := s.DropDB(s.ctx, s.dsn); err != nil {
+		ctx, cancel := s.context()
+		defer cancel()
+		if err := s.DropDB(ctx, s.dsn); err != nil {
 			s.T().Logf("failed to drop database: %s", err.Error())
 			return
 		}
@@ -125,6 +132,7 @@ func (s *DatabaseSuite) TearDownSuite() {
 	}
 }
 
+// Creates a new per-test context. Takes a write lock on mu.
 func (s *DatabaseSuite) SetupTest() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -132,7 +140,12 @@ func (s *DatabaseSuite) SetupTest() {
 	s.ctx, s.cancel = s.context()
 }
 
+// Resets the database and cancels the context. Takes a write lock on mu.
 func (s *DatabaseSuite) TearDownTest() {
+	if !s.ReadOnly() {
+		s.ResetDB()
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -142,6 +155,7 @@ func (s *DatabaseSuite) TearDownTest() {
 	s.ctx, s.cancel = nil, nil
 }
 
+// Creates a new per-subtest context. Takes a write lock on mu.
 func (s *DatabaseSuite) SetupSubTest() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -152,6 +166,7 @@ func (s *DatabaseSuite) SetupSubTest() {
 	s.ctx, s.cancel = s.context()
 }
 
+// Cancels the per-subtest context. Takes a write lock on mu.
 func (s *DatabaseSuite) TearDownSubTest() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -167,6 +182,7 @@ func (s *DatabaseSuite) TearDownSubTest() {
 //============================================================================
 
 // Returns an uneditable copy of the DSN currently being used by the suite.
+// Takes a read lock on mu.
 func (s *DatabaseSuite) DSN() dsn.DSN {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -174,7 +190,7 @@ func (s *DatabaseSuite) DSN() dsn.DSN {
 	return *s.dsn
 }
 
-// Checks the DSN to see if the database is read only.
+// Checks the DSN to see if the database is read only. Takes a read lock on mu.
 func (s *DatabaseSuite) ReadOnly() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -182,7 +198,7 @@ func (s *DatabaseSuite) ReadOnly() bool {
 	return s.dsn.Options.ReadOnly()
 }
 
-// Returns a context with a timeout (cancel is automatically called by TearDownTest/TearDownSubTest).
+// Returns a context with a timeout. Takes a read lock on mu.
 func (s *DatabaseSuite) Context() context.Context {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -190,19 +206,14 @@ func (s *DatabaseSuite) Context() context.Context {
 	return s.ctx
 }
 
+// Returns a context with the suite timeout. Does not acquire mu.
 func (s *DatabaseSuite) context() (context.Context, context.CancelFunc) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.Timeout == 0 {
-		s.Timeout = DefaultTimeout
-	}
-
 	return context.WithTimeout(context.Background(), s.Timeout)
 }
 
-// Starts a new transaction on the database with the current context.
-// Callers must ensure that the transaction is rolled back or committed.
+// Starts a new transaction on the database with the current context. Callers
+// must ensure that the transaction is rolled back or committed. Takes a read
+// lock on mu.
 func (s *DatabaseSuite) BeginTx(opts *sql.TxOptions) *sql.Tx {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -216,7 +227,7 @@ func (s *DatabaseSuite) BeginTx(opts *sql.TxOptions) *sql.Tx {
 	return tx
 }
 
-// Applies the migrations to the database.
+// Applies the migrations to the database. Does not acquire mu.
 func (s *DatabaseSuite) Migrate() {
 	if s.Migrations != nil && s.DB != nil {
 		ctx, cancel := s.context()
@@ -228,7 +239,8 @@ func (s *DatabaseSuite) Migrate() {
 	}
 }
 
-// ResetDB calls DropTables and then Migrate to reset the database back to its initial state.
+// ResetDB calls DropTables and then Migrate to reset the database back to its
+// initial state. Does not acquire mu.
 func (s *DatabaseSuite) ResetDB() {
 	if s.DB != nil {
 		s.DropTables()
@@ -238,7 +250,7 @@ func (s *DatabaseSuite) ResetDB() {
 	}
 }
 
-// DropTables drops all tables from the database.
+// DropTables drops all tables from the database. Does not acquire mu.
 func (s *DatabaseSuite) DropTables() {
 	if s.DB != nil {
 		ctx, cancel := s.context()
@@ -250,7 +262,7 @@ func (s *DatabaseSuite) DropTables() {
 	}
 }
 
-// TruncateTables truncates all tables in the database.
+// TruncateTables truncates all tables in the database. Does not acquire mu.
 func (s *DatabaseSuite) TruncateTables() {
 	if s.DB != nil {
 		ctx, cancel := s.context()
