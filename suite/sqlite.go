@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"go.rtnl.ai/tidal"
 	"go.rtnl.ai/x/dsn"
 )
 
@@ -81,9 +82,9 @@ func (p *SQLiteProvider) DropDB(ctx context.Context, uri *dsn.DSN) (err error) {
 	return err
 }
 
-func (p *SQLiteProvider) DropTables(ctx context.Context, conn *sql.DB) (err error) {
+func (p *SQLiteProvider) DropTables(ctx context.Context, conn *tidal.DB) (err error) {
 	var tx *sql.Tx
-	if tx, err = conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
+	if tx, err = conn.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
 		return fmt.Errorf("could not begin transaction: %w", err)
 	}
 	defer tx.Rollback()
@@ -122,9 +123,9 @@ func (p *SQLiteProvider) DropTables(ctx context.Context, conn *sql.DB) (err erro
 	return tx.Commit()
 }
 
-func (p *SQLiteProvider) TruncateTables(ctx context.Context, conn *sql.DB) (err error) {
+func (p *SQLiteProvider) TruncateTables(ctx context.Context, conn *tidal.DB) (err error) {
 	var tx *sql.Tx
-	if tx, err = conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
+	if tx, err = conn.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
 		return fmt.Errorf("could not begin transaction: %w", err)
 	}
 	defer tx.Rollback()

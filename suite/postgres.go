@@ -119,7 +119,7 @@ BEGIN
 END $$;
 `
 
-func (p *PostgresProvider) DropTables(ctx context.Context, conn *sql.DB) error {
+func (p *PostgresProvider) DropTables(ctx context.Context, conn *tidal.DB) error {
 	_, err := conn.Exec(dropTableQuery)
 	return err
 }
@@ -140,7 +140,7 @@ BEGIN
 END $$;
 `
 
-func (p *PostgresProvider) TruncateTables(ctx context.Context, conn *sql.DB) error {
+func (p *PostgresProvider) TruncateTables(ctx context.Context, conn *tidal.DB) error {
 	_, err := conn.Exec(truncateQuery)
 	return err
 }

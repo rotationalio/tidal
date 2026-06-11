@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"go.rtnl.ai/tidal"
 )
 
 // Fixtures are similar to migrations, they load a SQL query from a file on disk and
@@ -33,14 +35,14 @@ func (path Fixture) SQL() (_ string, err error) {
 }
 
 // Implements the suite.Migrations interface so that a fixture can be used as a migration.
-func (path Fixture) Apply(ctx context.Context, _ string, db *sql.DB, _ string) (err error) {
+func (path Fixture) Apply(ctx context.Context, db *tidal.DB, _ string) (err error) {
 	var query string
 	if query, err = path.SQL(); err != nil {
 		return err
 	}
 
 	var tx *sql.Tx
-	if tx, err = db.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
+	if tx, err = db.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
 		return errors.Join(err, fmt.Errorf("could not begin transaction to apply fixture %q", path), err)
 	}
 	defer tx.Rollback()
@@ -69,9 +71,9 @@ func Glob(pattern string) (fixtures Fixtures, err error) {
 	return fixtures, nil
 }
 
-func (fs Fixtures) Apply(ctx context.Context, provider string, db *sql.DB, version string) (err error) {
+func (fs Fixtures) Apply(ctx context.Context, db *tidal.DB, version string) (err error) {
 	var tx *sql.Tx
-	if tx, err = db.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
+	if tx, err = db.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
 		return errors.Join(err, fmt.Errorf("could not begin transaction to apply fixtures"), err)
 	}
 	defer tx.Rollback()

@@ -10,11 +10,11 @@ import (
 )
 
 //============================================================================
-// QueryParams
+// Rewrite
 //============================================================================
 
 // Rewrites canonical :name SQL and named arguments for the given driver style.
-func QueryParams(query string, args []sql.NamedArg, ph PlaceholderType) (*BoundQuery, error) {
+func Rewrite(query string, args []sql.NamedArg, ph PlaceholderType) (*BoundQuery, error) {
 	switch ph {
 	case Named:
 		out := make([]any, len(args))
@@ -111,7 +111,7 @@ func rewriteQuery(query string, args []sql.NamedArg, ph placeholderFunc, reuseBy
 				value, ok := byName[name]
 				if !ok {
 					// If not found, return an error indicating the missing argument
-					return nil, &MissingArgumentError{Name: name}
+					return nil, MissingArgument(name)
 				}
 
 				// If the same :name token appears twice, reuse the same

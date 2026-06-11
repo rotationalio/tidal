@@ -153,7 +153,7 @@ func Migrations() (migrations.Migrations, error) {
 
 Call `Apply` (or `ApplyPostgres` / `ApplySQLite` directly) after connecting with `tidal.Open`. These methods create the `migrations` bookkeeping table if it does not exist, look up the last applied migration ID, and apply only migrations with a higher ID. The `version` string you pass is recorded alongside each migration so you can tell which release applied a given schema change.
 
-Migrations operate on a raw `*sql.DB`; pass `db.DB` from your `*tidal.DB`:
+Pass your `*tidal.DB` connection to `Apply`:
 
 ```go
 ctx := context.Background()
@@ -169,8 +169,7 @@ if err != nil {
  return err
 }
 
-// Dispatches to the backend-specific apply method for uri.Provider.
-if err := m.Apply(ctx, uri.Provider, db.DB, "v1.4.0"); err != nil {
+if err := m.Apply(ctx, db, "v1.4.0"); err != nil {
  return err
 }
 ```
@@ -182,7 +181,7 @@ Applying migrations is idempotent: if the database is already up to date, no mig
 Use `LastApplied` to read the most recently applied migration record (ID, name, version, and the time it was applied) from the `migrations` table:
 
 ```go
-last, err := migrations.LastApplied(ctx, db.DB)
+last, err := migrations.LastApplied(ctx, db)
 if err != nil {
  return err
 }

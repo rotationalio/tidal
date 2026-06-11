@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"go.rtnl.ai/tidal"
 )
 
 const pgMigrationTable = `
@@ -37,7 +39,7 @@ const (
 // the database is first connected to. This method checks that the migrations table
 // exists and if not, it creates the table. A PostgreSQL advisory lock is used to ensure
 // that only one instance of the application can apply migrations at a time.
-func (m Migrations) ApplyPostgres(ctx context.Context, db *sql.DB, version string) (err error) {
+func (m Migrations) ApplyPostgres(ctx context.Context, db *tidal.DB, version string) (err error) {
 	// Acquire a single connection so that we can acquire the advisory lock.
 	var conn *sql.Conn
 	if conn, err = db.Conn(ctx); err != nil {

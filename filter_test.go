@@ -24,6 +24,11 @@ func TestFilterClause(t *testing.T) {
 		require.Equal(t, "ORDER BY id ASC LIMIT 10 OFFSET 5", f.Clause())
 	})
 
+	t.Run("LimitOffsetWithoutOrder", func(t *testing.T) {
+		f := (&Filter{}).Limit(10).Offset(5)
+		require.Equal(t, "LIMIT 10 OFFSET 5", f.Clause())
+	})
+
 	t.Run("ClearLimitOffset", func(t *testing.T) {
 		// n=-1 clears a previously set limit or offset.
 		f := (&Filter{}).Limit(10).Offset(5).Limit(-1).Offset(-1)

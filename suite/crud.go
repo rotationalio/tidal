@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
-	"strings"
 	"testing"
 	"time"
-	"unicode"
 
 	"go.rtnl.ai/tidal"
 	"go.rtnl.ai/ulid"
+	"go.rtnl.ai/x/typecase"
 )
 
 // Configuration for a model conformance run against [tidal.CRUD].
@@ -38,7 +37,19 @@ type CRUDConformance[M tidal.Model] struct {
 	// ULIDs by value. Provide a custom function when models include field types that
 	// need special handling (for example JSONB normalization).
 	Equal func(a, b M) bool
+
+	// Phases selects which conformance phases to run. When empty, all phases run.
+	Phases []CRUDPhase
 }
+
+// CRUDPhase names a conformance phase run by [ConformsCRUD].
+type CRUDPhase string
+
+const (
+	CRUDShape     CRUDPhase = "Shape"
+	CRUDScan      CRUDPhase = "Scan"
+	CRUDRoundTrip CRUDPhase = "RoundTrip"
+)
 
 // Runs three independent conformance phases against a [tidal.Model] implementation.
 //
@@ -58,17 +69,28 @@ func ConformsCRUD[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M]) {
 
 	crud := tidal.New[M](cfg.Table)
 
-	s.Run("Shape", func() {
-		testCRUDShape(s, cfg, crud)
-	})
+	if len(cfg.Phases) == 0 {
+		cfg.Phases = []CRUDPhase{CRUDShape, CRUDScan, CRUDRoundTrip}
+	}
 
-	s.Run("Scan", func() {
-		testCRUDScan(s, cfg, cfg.Equal)
-	})
-
-	s.Run("RoundTrip", func() {
-		testCRUDRoundTrip(s, cfg, crud, cfg.Equal)
-	})
+	for _, phase := range cfg.Phases {
+		switch phase {
+		case CRUDShape:
+			s.Run("Shape", func() {
+				testCRUDShape(s, cfg, crud)
+			})
+		case CRUDScan:
+			s.Run("Scan", func() {
+				testCRUDScan(s, cfg, cfg.Equal)
+			})
+		case CRUDRoundTrip:
+			s.Run("RoundTrip", func() {
+				testCRUDRoundTrip(s, cfg, crud, cfg.Equal)
+			})
+		default:
+			require.Failf("unknown CRUD conformance phase %q", string(phase))
+		}
+	}
 }
 
 // Static metadata checks. Does not open a transaction, does not call CRUD Create/
@@ -80,7 +102,7 @@ func testCRUDShape[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M], crud
 	require := s.Require()
 	m := cfg.Create()
 
-	for _, op := range []tidal.Operation{tidal.List, tidal.Create, tidal.Retrieve, tidal.Update} {
+	for _, op := range []tidal.Operation{tidal.List, tidal.Create, tidal.Retrieve, tidal.Update, tidal.Delete} {
 		s.Run(op.String(), func() {
 			// --- Fields(op): column names this operation expects ---
 			fields := m.Fields(op)
@@ -90,8 +112,9 @@ func testCRUDShape[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M], crud
 				require.NotEmpty(field, "Fields(%s) must not contain empty names", op)
 			}
 
-			// List only defines which columns Scan reads; it has no Params in CRUD.
-			if op == tidal.List {
+			// List, Retrieve, and Delete only define which columns Scan reads or which
+			// columns appear in generated SQL; CRUD does not call Params for them.
+			if op == tidal.List || op == tidal.Retrieve || op == tidal.Delete {
 				return
 			}
 
@@ -347,7 +370,7 @@ func equalValues(tb testing.TB, a, b reflect.Value) bool {
 		// Types that survive a DB round-trip but not reflect.DeepEqual:
 		// time.Time, sql.NullTime, ulid.ULID.
 		if a.Type() == reflect.TypeOf(time.Time{}) {
-			return timesEqual(tb, a.Interface().(time.Time), b.Interface().(time.Time))
+			return timeEqual(tb, a.Interface().(time.Time), b.Interface().(time.Time))
 		}
 		if a.Type() == reflect.TypeOf(sql.NullTime{}) {
 			at := a.Interface().(sql.NullTime)
@@ -358,7 +381,7 @@ func equalValues(tb testing.TB, a, b reflect.Value) bool {
 			if !at.Valid {
 				return true // both NULL — skip time comparison
 			}
-			return timesEqual(tb, at.Time, bt.Time)
+			return timeEqual(tb, at.Time, bt.Time)
 		}
 		if a.Type() == reflect.TypeOf(ulid.ULID{}) {
 			// ULID is a [16]byte array; == compares bytes, not pointer identity.
@@ -391,86 +414,15 @@ func fieldByColumn(tb testing.TB, v reflect.Value, column string) (reflect.Value
 		}
 
 		// Match DB column name (snake_case) to Go field name (CamelCase).
-		if columnName(tb, field.Name) == column {
+		if typecase.Snake(field.Name) == column {
 			return v.Field(i), true
 		}
 	}
 	return reflect.Value{}, false
 }
 
-// Maps Go field names to column names (ID -> id, LastSeen -> last_seen).
-func columnName(tb testing.TB, field string) string {
-	tb.Helper()
-	var b strings.Builder
-	for i, r := range field {
-		if i > 0 {
-			prev := rune(field[i-1])
-			if unicode.IsUpper(r) || (unicode.IsDigit(prev) && unicode.IsLetter(r)) {
-				var next rune
-				if i+1 < len(field) {
-					next = rune(field[i+1])
-				}
-				if shouldSplitColumnName(field, i, r, prev, next) {
-					b.WriteByte('_')
-				}
-			}
-		}
-		b.WriteRune(unicode.ToLower(r))
-	}
-	return b.String()
-}
-
-// shouldSplitColumnName applies CamelCase → snake_case word-boundary rules:
-//
-//  1. Classic camelCase:     lower → Upper → lower     (LastSeen, GoVariable)
-//  2. Acronym → word:        Upper → Upper... → lower  (URLPath, HTTPHeader)
-//  3. Word → acronym suffix: lower → Upper...          (UserID, UserA, etc.)
-//  4. Acronym particle:      Cap–lower–Cap           (DoB, MoU — suppress split)
-//  5. Digit boundary:        digit → letter          (v2API, v2api, OAuth2Token)
-func shouldSplitColumnName(field string, i int, r, prev, next rune) bool {
-	split := false
-
-	// Rule 1: lower → Upper → lower
-	if unicode.IsLower(prev) && next != 0 && unicode.IsLower(next) {
-		split = true
-	}
-
-	// Rule 2: upper → Upper → lower (skip OA… / IPv… continuations at i==1)
-	if unicode.IsUpper(prev) && next != 0 && unicode.IsLower(next) {
-		if !(i == 1 && unicode.IsUpper(rune(field[0])) && unicode.IsUpper(r)) {
-			split = true
-		}
-	}
-
-	// Rule 3: lower → Upper… — trailing initial (UserA) or uppercase suffix (UserID)
-	if unicode.IsLower(prev) && (next == 0 || unicode.IsUpper(next)) {
-		split = true
-	}
-
-	// Rule 4: Cap–lower–Cap particle — suppress split (DoB, QoL) or undo rule 3
-	// when closing before the next word (QoLUser).
-	if i >= 2 && unicode.IsLower(prev) && unicode.IsUpper(rune(field[i-2])) {
-		switch {
-		case next != 0 && unicode.IsUpper(next):
-			// like 'QoLUser' — suppress split (wait for rule 2 at the next word)
-			split = false
-		case (next == 0 || unicode.IsUpper(next)) &&
-			(i+1 >= len(field) || !unicode.IsUpper(rune(field[i+1]))):
-			// like 'DoB', QoL — suppress split (single closing upper)
-			split = false
-		}
-	}
-
-	// Rule 5: digit → letter (version or numeric prefix before suffix)
-	if unicode.IsDigit(prev) && unicode.IsLetter(r) {
-		split = true
-	}
-
-	return split
-}
-
 // Database drivers often truncate timestamps; compare at second precision in UTC.
-func timesEqual(tb testing.TB, a, b time.Time) bool {
+func timeEqual(tb testing.TB, a, b time.Time) bool {
 	tb.Helper()
 	if a.IsZero() && b.IsZero() {
 		return true

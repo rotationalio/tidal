@@ -16,10 +16,14 @@ import (
 // database, or [Wrap] to wrap an existing [sql.DB].
 type DB struct {
 	*sql.DB
-	provider string
+	dsn *dsn.DSN
 }
 
 // Open connects to the database described by uri.
+//
+// NOTE: after successfully opening a connection this method pings the database
+// to check liveness and connectivity. The database must be ready before calling
+// Open.
 func Open(ctx context.Context, uri *dsn.DSN) (*DB, error) {
 	sqlDB, err := open(ctx, uri)
 	if err != nil {
@@ -31,14 +35,19 @@ func Open(ctx context.Context, uri *dsn.DSN) (*DB, error) {
 // Wraps an existing [sql.DB] with the provider from uri.
 func Wrap(sqlDB *sql.DB, uri *dsn.DSN) *DB {
 	return &DB{
-		DB:       sqlDB,
-		provider: uri.Provider,
+		DB:  sqlDB,
+		dsn: uri.Clone(),
 	}
 }
 
 // Provider returns the DSN provider (for example dsn.Postgres or dsn.SQLite3).
 func (db *DB) Provider() string {
-	return db.provider
+	return db.dsn.Provider
+}
+
+// DSN returns a copy of the connection DSN.
+func (db *DB) DSN() *dsn.DSN {
+	return db.dsn.Clone()
 }
 
 // BeginTx starts a transaction with automatic placeholder binding for this DB's provider.
@@ -47,7 +56,7 @@ func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (Tx, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newTxn(tx, db.provider), nil
+	return newTxn(tx, db.dsn), nil
 }
 
 // Opens a new database connection to the database described by uri.
@@ -70,7 +79,7 @@ func open(ctx context.Context, uri *dsn.DSN) (db *sql.DB, err error) {
 		db.SetConnMaxLifetime(pgopts.ConnMaxLifetime)
 		db.SetConnMaxIdleTime(pgopts.ConnMaxIdleTime)
 	default:
-		return nil, &UnsupportedProviderError{Provider: uri.Provider}
+		return nil, UnsupportedProvider(uri.Provider)
 	}
 
 	if err = db.PingContext(ctx); err != nil {

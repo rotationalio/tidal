@@ -74,7 +74,7 @@ func (s *TidalTestSuite) TestUserCRUDConformance() {
 func newConformanceUser() *User {
 	return &User{
 		Name:     "Conformance User",
-		DoB:      sql.NullTime{Valid: true, Time: time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC)},
+		DOB:      sql.NullTime{Valid: true, Time: time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC)},
 		Email:    fmt.Sprintf("conformance-%s@example.com", ulid.MakeSecure().String()),
 		Password: "test-password",
 		Verified: true,
