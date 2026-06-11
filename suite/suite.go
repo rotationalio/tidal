@@ -94,7 +94,7 @@ func (s *DatabaseSuite) SetupSuite() {
 	// Step four: apply the migrations if there are any.
 	if s.Migrations != nil {
 		s.T().Log("applying migrations")
-		if err = s.Migrations.Apply(ctx, s.dsn.Provider, s.DB.DB, "test"); err != nil {
+		if err = s.Migrations.Apply(ctx, s.DB, "test"); err != nil {
 			s.T().Fatalf("failed to apply migrations: %s", err.Error())
 			return
 		}
@@ -234,7 +234,7 @@ func (s *DatabaseSuite) Migrate() {
 		ctx, cancel := s.context()
 		defer cancel()
 
-		s.Require().NoError(s.Migrations.Apply(ctx, s.dsn.Provider, s.DB.DB, "test"), "failed to apply migrations")
+		s.Require().NoError(s.Migrations.Apply(ctx, s.DB, "test"), "failed to apply migrations")
 	} else {
 		// NOTE: this is not necessarily an error; for example a test suite may not
 		// use these fields for every test.
@@ -259,7 +259,7 @@ func (s *DatabaseSuite) DropTables() {
 		ctx, cancel := s.context()
 		defer cancel()
 
-		s.Require().NoError(s.Provider.DropTables(ctx, s.DB.DB), "failed to drop tables")
+		s.Require().NoError(s.Provider.DropTables(ctx, s.DB), "failed to drop tables")
 	} else {
 		s.T().Log("cannot drop tables because s.DB is nil")
 	}
@@ -271,7 +271,7 @@ func (s *DatabaseSuite) TruncateTables() {
 		ctx, cancel := s.context()
 		defer cancel()
 
-		s.Require().NoError(s.Provider.TruncateTables(ctx, s.DB.DB), "failed to truncate tables")
+		s.Require().NoError(s.Provider.TruncateTables(ctx, s.DB), "failed to truncate tables")
 	} else {
 		s.T().Log("cannot truncate tables because s.DB is nil")
 	}

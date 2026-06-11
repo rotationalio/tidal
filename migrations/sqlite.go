@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"go.rtnl.ai/tidal"
 )
 
 const sqliteMigrationTable = `
@@ -32,7 +34,7 @@ const (
 // the database is first connected to. This method checks that the migrations table
 // exists and if not, it creates the table. Because SQLite is a single file database
 // a write lock is used to ensure that only one goroutine can apply migrations.
-func (m Migrations) ApplySQLite(ctx context.Context, db *sql.DB, version string) (err error) {
+func (m Migrations) ApplySQLite(ctx context.Context, db *tidal.DB, version string) (err error) {
 	// Create the migrations table if it does not exist.
 	if _, err = db.ExecContext(ctx, sqliteMigrationTable); err != nil {
 		return fmt.Errorf("could not create migrations table: %w", err)
@@ -40,7 +42,7 @@ func (m Migrations) ApplySQLite(ctx context.Context, db *sql.DB, version string)
 
 	// Start a transaction to apply the migrations.
 	var tx *sql.Tx
-	if tx, err = db.BeginTx(ctx, &sql.TxOptions{ReadOnly: false}); err != nil {
+	if tx, err = db.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: false}); err != nil {
 		return fmt.Errorf("could not begin transaction: %w", err)
 	}
 	defer tx.Rollback()

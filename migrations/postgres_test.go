@@ -28,10 +28,10 @@ func (s *PostgresTestSuite) TestMigrations() {
 	require.NoError(err)
 	require.NotNil(migrations)
 
-	err = migrations.ApplyPostgres(context.Background(), s.DB.DB, "v1.0.0")
+	err = migrations.ApplyPostgres(context.Background(), s.DB, "v1.0.0")
 	require.NoError(err)
 
-	last, err := LastApplied(context.Background(), s.DB.DB)
+	last, err := LastApplied(context.Background(), s.DB)
 	require.NoError(err)
 	require.NotNil(last)
 	require.Equal(3, last.ID)
@@ -51,28 +51,28 @@ func (s *PostgresTestSuite) TestApplyOrdered() {
 	charlie := migrations[2:]
 
 	require.Len(alpha, 1, "expected 1 migration")
-	err = alpha.ApplyPostgres(context.Background(), s.DB.DB, "v1.0.0")
+	err = alpha.ApplyPostgres(context.Background(), s.DB, "v1.0.0")
 	require.NoError(err)
 
-	last, err := LastApplied(context.Background(), s.DB.DB)
+	last, err := LastApplied(context.Background(), s.DB)
 	require.NoError(err)
 	require.Equal(1, last.ID)
 	require.Equal("v1.0.0", last.Version)
 
 	require.Len(bravo, 1, "expected 1 migration")
-	err = bravo.ApplyPostgres(context.Background(), s.DB.DB, "v1.1.0")
+	err = bravo.ApplyPostgres(context.Background(), s.DB, "v1.1.0")
 	require.NoError(err)
 
-	last, err = LastApplied(context.Background(), s.DB.DB)
+	last, err = LastApplied(context.Background(), s.DB)
 	require.NoError(err)
 	require.Equal(2, last.ID)
 	require.Equal("v1.1.0", last.Version)
 
 	require.Len(charlie, 1, "expected 1 migration")
-	err = charlie.ApplyPostgres(context.Background(), s.DB.DB, "v1.2.0")
+	err = charlie.ApplyPostgres(context.Background(), s.DB, "v1.2.0")
 	require.NoError(err)
 
-	last, err = LastApplied(context.Background(), s.DB.DB)
+	last, err = LastApplied(context.Background(), s.DB)
 	require.NoError(err)
 	require.Equal(3, last.ID)
 	require.Equal("v1.2.0", last.Version)

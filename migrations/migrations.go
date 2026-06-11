@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"go.rtnl.ai/tidal"
 	"go.rtnl.ai/x/dsn"
 	"go.rtnl.ai/x/typecase"
 )
@@ -115,8 +116,8 @@ func Load(files fs.FS) (migrations Migrations, err error) {
 // Migrations is an ordered list of schema migrations to apply.
 type Migrations []*Migration
 
-// Apply runs pending migrations using the backend-specific method for provider.
-func (m Migrations) Apply(ctx context.Context, provider string, db *sql.DB, version string) error {
+// Apply runs pending migrations using the backend-specific method for the connection provider.
+func (m Migrations) Apply(ctx context.Context, db *tidal.DB, version string) error {
 	// Sort the migrations by ID
 	m.Sort()
 
@@ -125,13 +126,13 @@ func (m Migrations) Apply(ctx context.Context, provider string, db *sql.DB, vers
 		return err
 	}
 
-	switch provider {
+	switch db.Provider() {
 	case dsn.Postgres:
 		return m.ApplyPostgres(ctx, db, version)
 	case dsn.SQLite3:
 		return m.ApplySQLite(ctx, db, version)
 	default:
-		return fmt.Errorf("unimplemented provider: %s", provider)
+		return fmt.Errorf("unimplemented provider: %s", db.Provider())
 	}
 }
 
@@ -177,9 +178,9 @@ SELECT id, name, version, applied FROM migrations
 `
 
 // Retrieve the last applied migration info from the migrations table.
-func LastApplied(ctx context.Context, db *sql.DB) (migration *Migration, err error) {
+func LastApplied(ctx context.Context, db *tidal.DB) (migration *Migration, err error) {
 	var tx *sql.Tx
-	if tx, err = db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true}); err != nil {
+	if tx, err = db.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true}); err != nil {
 		return nil, fmt.Errorf("could not begin transaction: %w", err)
 	}
 	defer tx.Rollback()

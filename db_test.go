@@ -14,7 +14,7 @@ func TestOpenUnsupportedProvider(t *testing.T) {
 	_, err := tidal.Open(context.Background(), &dsn.DSN{Provider: "mysql"})
 	require.Error(t, err)
 
-	var unsupported *tidal.UnsupportedProviderError
+	var unsupported tidal.UnsupportedProvider
 	require.ErrorAs(t, err, &unsupported)
-	require.Equal(t, "mysql", unsupported.Provider)
+	require.Equal(t, "mysql", string(unsupported))
 }

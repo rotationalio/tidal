@@ -17,7 +17,7 @@ import (
 type User struct {
 	tidal.BaseModel
 	Name     string
-	DoB      sql.NullTime
+	DOB      sql.NullTime
 	Email    string
 	Password string
 	Verified bool
@@ -41,7 +41,7 @@ func (u *User) Params(op tidal.Operation) []sql.NamedArg {
 		return []sql.NamedArg{
 			sql.Named("id", u.ID),
 			sql.Named("name", u.Name),
-			sql.Named("dob", u.DoB),
+			sql.Named("dob", u.DOB),
 			sql.Named("email", u.Email),
 			sql.Named("modified", u.Modified),
 		}
@@ -49,7 +49,7 @@ func (u *User) Params(op tidal.Operation) []sql.NamedArg {
 		return []sql.NamedArg{
 			sql.Named("id", u.ID),
 			sql.Named("name", u.Name),
-			sql.Named("dob", u.DoB),
+			sql.Named("dob", u.DOB),
 			sql.Named("email", u.Email),
 			sql.Named("password", u.Password),
 			sql.Named("verified", u.Verified),
@@ -65,7 +65,7 @@ func (u *User) Scan(op tidal.Operation, s tidal.Scanner) error {
 	case tidal.List:
 		return s.Scan(&u.ID, &u.Name, &u.Email, &u.Created, &u.Modified)
 	default:
-		return s.Scan(&u.ID, &u.Name, &u.DoB, &u.Email, &u.Password, &u.Verified, &u.LastSeen, &u.Created, &u.Modified)
+		return s.Scan(&u.ID, &u.Name, &u.DOB, &u.Email, &u.Password, &u.Verified, &u.LastSeen, &u.Created, &u.Modified)
 	}
 }
 

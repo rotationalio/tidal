@@ -19,21 +19,17 @@ var (
 	ErrPing                   = errors.New("could not ping database")
 )
 
-// UnsupportedProviderError is returned when [Open] is called with a DSN provider
-// that tidal does not support.
-type UnsupportedProviderError struct {
-	Provider string
+// UnsupportedProvider is returned when [Open] is called with a DSN provider that tidal
+// does not support.
+type UnsupportedProvider string
+
+func (e UnsupportedProvider) Error() string {
+	return fmt.Sprintf("unsupported database provider: %q", string(e))
 }
 
-func (e *UnsupportedProviderError) Error() string {
-	return fmt.Sprintf("unsupported database provider: %q", e.Provider)
-}
+// MissingArgument is returned when a :name placeholder has no matching [sql.NamedArg].
+type MissingArgument string
 
-// MissingArgumentError is returned when a :name placeholder has no matching [sql.NamedArg].
-type MissingArgumentError struct {
-	Name string
-}
-
-func (e *MissingArgumentError) Error() string {
-	return fmt.Sprintf("missing argument %q for query", e.Name)
+func (e MissingArgument) Error() string {
+	return fmt.Sprintf("missing argument %q for query", string(e))
 }
