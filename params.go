@@ -1,53 +1,155 @@
-// TODO: create a query parser that always takes a SQL string with :name placeholders
-// and a list of sql.NamedArgs then returns a Query that is converted to the right
-// placeholder type and an []any array for the values.
-// TODO: See sqlx for an example of how they do feed forward parsing for named params.
 package tidal
 
 import (
 	"database/sql"
 	"fmt"
+	"strings"
+	"unicode"
+
+	"go.rtnl.ai/x/dsn"
 )
 
-func QueryParams(args []sql.NamedArg, placeholder PlaceholderType) Params {
-	params := Params{
-		placeholder:  placeholder,
-		placeholders: make(map[string]string),
-		values:       make([]any, len(args)),
-	}
+//============================================================================
+// QueryParams
+//============================================================================
 
-	for i, arg := range args {
-		switch placeholder {
-		case Positional:
-			params.placeholders[arg.Name] = "?"
-		case Ordered:
-			params.placeholders[arg.Name] = fmt.Sprintf("$%d", i+1)
-		case Named:
-			params.placeholders[arg.Name] = fmt.Sprintf(":%s", arg.Name)
-		case AtP:
-			params.placeholders[arg.Name] = "@p"
+// Rewrites canonical :name SQL and named arguments for the given driver style.
+func QueryParams(query string, args []sql.NamedArg, ph PlaceholderType) (*BoundQuery, error) {
+	switch ph {
+	case Named:
+		out := make([]any, len(args))
+		for i, arg := range args {
+			out[i] = arg
 		}
-		params.values = append(params.values, arg.Value)
+		return &BoundQuery{query: query, values: out}, nil
+	case Ordered:
+		return rewriteQuery(query, args, orderedPlaceholder, true)
+	case Positional:
+		return rewriteQuery(query, args, positionalPlaceholder, false)
+	case AtP:
+		return rewriteQuery(query, args, atpPlaceholder, true)
+	default:
+		return nil, ErrUnsupportedPlaceholder
+	}
+}
+
+//============================================================================
+// Helper Functions
+//============================================================================
+
+// Selects the placeholder type from a DSN provider name.
+func PlaceholderFor(provider string) PlaceholderType {
+	switch provider {
+	case dsn.Postgres:
+		return Ordered
+	case dsn.SQLite3:
+		return Named
+	default:
+		return UnknownPlaceholder
+	}
+}
+
+type placeholderFunc func(n int) string
+
+// orderedPlaceholder formats a Postgres positional placeholder (ex: $1, $2, $3, etc.).
+func orderedPlaceholder(n int) string { return fmt.Sprintf("$%d", n) }
+
+// positionalPlaceholder formats a SQLite-style positional placeholder (always returns '?').
+func positionalPlaceholder(_ int) string { return "?" }
+
+// atpPlaceholder formats an SQL Server-style positional placeholder (ex: @p1, @p2, @p3, etc.).
+func atpPlaceholder(n int) string { return fmt.Sprintf("@p%d", n) }
+
+// rewriteQuery replaces :name tokens in left-to-right order and builds matching args.
+// When reuseByName is true, numbered placeholders ($1, @p1) reuse the same index for
+// repeated :name tokens. Anonymous placeholders cannot reuse a single arg slot, so
+// reuseByName must be false for positional only placeholders (like '?').
+//
+// NOTE: This function is very performant, and caching is probably not needed; this
+// was confirmed in benchmarks with cached vs uncached versions; the cached version
+// was complex and only ~5% faster.
+func rewriteQuery(query string, args []sql.NamedArg, ph placeholderFunc, reuseByName bool) (*BoundQuery, error) {
+	var (
+		b           strings.Builder
+		values      []any
+		indexByName map[string]int
+	)
+
+	if reuseByName {
+		indexByName = make(map[string]int, len(args))
 	}
 
-	return params
+	byName := make(map[string]any, len(args))
+	for _, arg := range args {
+		byName[arg.Name] = arg.Value
+	}
+
+	// Scan through each character in the input query string.
+	for i := 0; i < len(query); {
+		// Check if the current character is ':' indicating the start of a named placeholder (e.g., :name)
+		if query[i] == ':' && i+1 < len(query) {
+			// Postgres cast operator (::type) — copy through without binding.
+			if query[i+1] == ':' {
+				j := i + 2
+				for j < len(query) && isParamIdent(query[j]) {
+					j++
+				}
+				b.WriteString(query[i:j])
+				i = j
+				continue
+			}
+
+			// Continue scanning while the characters are valid identifier characters (letters, digits, or '_')
+			j := i + 1
+			for j < len(query) && isParamIdent(query[j]) {
+				j++
+			}
+
+			// Extract the parameter name found after ':'
+			if name := query[i+1 : j]; name != "" {
+				// Look up the named argument value by name in byName map
+				value, ok := byName[name]
+				if !ok {
+					// If not found, return an error indicating the missing argument
+					return nil, &MissingArgumentError{Name: name}
+				}
+
+				// If the same :name token appears twice, reuse the same
+				// placeholder index if reuseByName is true.
+				if idx, ok := indexByName[name]; ok {
+					b.WriteString(ph(idx))
+				} else {
+					values = append(values, value)
+					idx := len(values)
+					if reuseByName {
+						indexByName[name] = idx
+					}
+					b.WriteString(ph(idx))
+				}
+
+				// Move index i to just after the parameter name we just substituted
+				i = j
+				continue
+			}
+		}
+		// If current character is not the start of a placeholder, just copy it to the output buffer
+		b.WriteByte(query[i])
+		i++
+	}
+
+	return &BoundQuery{query: b.String(), values: values}, nil
 }
 
-type Params struct {
-	placeholder  PlaceholderType
-	placeholders map[string]string
-	values       []any
+// isParamIdent reports whether a byte may continue a :name placeholder identifier.
+func isParamIdent(r byte) bool {
+	return unicode.IsLetter(rune(r)) || unicode.IsDigit(rune(r)) || r == '_'
 }
 
-func (p Params) Placeholder(name string) (string, bool) {
-	placeholder, ok := p.placeholders[name]
-	return placeholder, ok
-}
+//============================================================================
+// Placeholder Types
+//============================================================================
 
-func (p Params) Args() []any {
-	return p.values
-}
-
+// PlaceholderType selects how :name placeholders are rewritten for a database driver.
 type PlaceholderType uint8
 
 const (
@@ -58,17 +160,22 @@ const (
 	AtP
 )
 
-func (p PlaceholderType) String() string {
-	switch p {
-	case Positional:
-		return "?"
-	case Ordered:
-		return "$N"
-	case Named:
-		return ":name"
-	case AtP:
-		return "@p"
-	default:
-		return "unknown"
-	}
+//============================================================================
+// BoundQuery
+//============================================================================
+
+// Holds a query and arguments ready for database/sql execution.
+type BoundQuery struct {
+	query  string
+	values []any
+}
+
+// SQL returns the query string with placeholders rewritten for the target driver.
+func (b *BoundQuery) SQL() string {
+	return b.query
+}
+
+// Args returns argument values in the order required by the rewritten query.
+func (b *BoundQuery) Args() []any {
+	return b.values
 }

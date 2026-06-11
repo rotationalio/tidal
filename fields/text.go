@@ -6,8 +6,10 @@ import (
 	"fmt"
 )
 
+// StringArray stores a list of strings as a JSON array in a NOT NULL column.
 type StringArray []string
 
+// NullStringArray stores a list of strings in a nullable column. Check Valid after scanning.
 type NullStringArray struct {
 	Valid       bool
 	StringArray StringArray
@@ -17,6 +19,7 @@ type NullStringArray struct {
 // StringArray Methods
 //============================================================================
 
+// Scan implements [database/sql.Scanner].
 func (s *StringArray) Scan(src any) (err error) {
 	if src == nil {
 		*s = nil
@@ -39,6 +42,7 @@ func (s *StringArray) Scan(src any) (err error) {
 	return nil
 }
 
+// Value implements [database/sql/driver.Valuer].
 func (s StringArray) Value() (driver.Value, error) {
 	if len(s) == 0 {
 		return nil, nil
@@ -50,6 +54,7 @@ func (s StringArray) Value() (driver.Value, error) {
 // NullStringArray Methods
 //============================================================================
 
+// Scan implements [database/sql.Scanner].
 func (n *NullStringArray) Scan(src any) (err error) {
 	if src == nil {
 		n.StringArray, n.Valid = nil, false
@@ -65,6 +70,7 @@ func (n *NullStringArray) Scan(src any) (err error) {
 	return nil
 }
 
+// Value implements [database/sql/driver.Valuer].
 func (n NullStringArray) Value() (driver.Value, error) {
 	if !n.Valid {
 		return nil, nil

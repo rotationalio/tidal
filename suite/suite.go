@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/suite"
+	"go.rtnl.ai/tidal"
 	"go.rtnl.ai/x/dsn"
 )
 
@@ -39,7 +40,7 @@ func Run(t *testing.T, s suite.TestingSuite) {
 type DatabaseSuite struct {
 	suite.Suite
 	Provider
-	*sql.DB
+	*tidal.DB // use DatabaseSuite.DB.DB to access the underlying sql.DB
 
 	DatabaseURL string
 	Migrations  Migrations
@@ -85,7 +86,7 @@ func (s *DatabaseSuite) SetupSuite() {
 
 	// Step three: connect to the database.
 	s.T().Logf("connecting to database: %s", s.dsn.String())
-	if s.DB, err = s.Connect(ctx, s.dsn); err != nil {
+	if s.DB, err = tidal.Open(ctx, s.dsn); err != nil {
 		s.T().Fatalf("failed to connect to database: %s", err.Error())
 		return
 	}
@@ -93,7 +94,7 @@ func (s *DatabaseSuite) SetupSuite() {
 	// Step four: apply the migrations if there are any.
 	if s.Migrations != nil {
 		s.T().Log("applying migrations")
-		if err = s.Migrations.Apply(ctx, s.dsn.Provider, s.DB, "test"); err != nil {
+		if err = s.Migrations.Apply(ctx, s.dsn.Provider, s.DB.DB, "test"); err != nil {
 			s.T().Fatalf("failed to apply migrations: %s", err.Error())
 			return
 		}
@@ -214,7 +215,7 @@ func (s *DatabaseSuite) context() (context.Context, context.CancelFunc) {
 // Starts a new transaction on the database with the current context. Callers
 // must ensure that the transaction is rolled back or committed. Takes a read
 // lock on mu.
-func (s *DatabaseSuite) BeginTx(opts *sql.TxOptions) *sql.Tx {
+func (s *DatabaseSuite) BeginTx(opts *sql.TxOptions) tidal.Tx {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -233,7 +234,7 @@ func (s *DatabaseSuite) Migrate() {
 		ctx, cancel := s.context()
 		defer cancel()
 
-		s.Require().NoError(s.Migrations.Apply(ctx, s.dsn.Provider, s.DB, "test"), "failed to apply migrations")
+		s.Require().NoError(s.Migrations.Apply(ctx, s.dsn.Provider, s.DB.DB, "test"), "failed to apply migrations")
 	} else {
 		// NOTE: this is not necessarily an error; for example a test suite may not
 		// use these fields for every test.
@@ -258,7 +259,7 @@ func (s *DatabaseSuite) DropTables() {
 		ctx, cancel := s.context()
 		defer cancel()
 
-		s.Require().NoError(s.Provider.DropTables(ctx, s.DB), "failed to drop tables")
+		s.Require().NoError(s.Provider.DropTables(ctx, s.DB.DB), "failed to drop tables")
 	} else {
 		s.T().Log("cannot drop tables because s.DB is nil")
 	}
@@ -270,7 +271,7 @@ func (s *DatabaseSuite) TruncateTables() {
 		ctx, cancel := s.context()
 		defer cancel()
 
-		s.Require().NoError(s.Provider.TruncateTables(ctx, s.DB), "failed to truncate tables")
+		s.Require().NoError(s.Provider.TruncateTables(ctx, s.DB.DB), "failed to truncate tables")
 	} else {
 		s.T().Log("cannot truncate tables because s.DB is nil")
 	}

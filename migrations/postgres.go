@@ -29,6 +29,7 @@ const (
 	acquireMigrationLockSQL = `SELECT pg_advisory_lock($1);`
 	releaseMigrationLockSQL = `SELECT pg_advisory_unlock($1);`
 
+	// AdvisoryLockID is the Postgres advisory lock used by [Migrations.ApplyPostgres].
 	AdvisoryLockID = int64(4006367007158143198)
 )
 

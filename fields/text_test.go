@@ -18,7 +18,7 @@ func (s *FieldsSqliteTestSuite) TestStringArray() {
 		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
-		params := []any{
+		params := []sql.NamedArg{
 			sql.Named("alpha", alpha),
 			sql.Named("bravo", bravo),
 		}
@@ -64,7 +64,7 @@ func (s *FieldsSqliteTestSuite) TestStringArray() {
 		defer tx.Rollback()
 
 		// Insert a new record into the database.
-		params := []any{
+		params := []sql.NamedArg{
 			sql.Named("alpha", `[]`),
 			sql.Named("bravo", nil),
 		}
@@ -98,21 +98,21 @@ func (s *FieldsPostgresTestSuite) TestStringArray() {
 		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
-		params := []any{
+		params := []sql.NamedArg{
 			sql.Named("alpha", alpha),
 			sql.Named("bravo", bravo),
 			sql.Named("charlie", charlie),
 			sql.Named("delta", delta),
 		}
 
-		row := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ($1, $2, $3, $4) RETURNING id", params...)
+		row := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES (:alpha, :bravo, :charlie, :delta) RETURNING id", params...)
 
 		var id int64
 		require.NoError(row.Scan(&id), "could not scan record")
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.
-		row = tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=$1", id)
+		row = tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=:id", sql.Named("id", id))
 
 		var aOut, bOut, cOut, dOut StringArray
 		require.NoError(row.Scan(&aOut, &bOut, &cOut, &dOut), "could not scan record")
@@ -135,7 +135,7 @@ func (s *FieldsPostgresTestSuite) TestStringArray() {
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.
-		row = tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=$1", id)
+		row = tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=:id", sql.Named("id", id))
 
 		var aOut, bOut, cOut, dOut StringArray
 		require.NoError(row.Scan(&aOut, &bOut, &cOut, &dOut), "could not scan record")
@@ -151,20 +151,20 @@ func (s *FieldsPostgresTestSuite) TestStringArray() {
 		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
-		params := []any{
+		params := []sql.NamedArg{
 			sql.Named("alpha", `[]`),
 			sql.Named("bravo", nil),
 			sql.Named("charlie", `[]`),
 			sql.Named("delta", nil),
 		}
-		row := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ($1, $2, $3, $4) RETURNING id", params...)
+		row := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES (:alpha, :bravo, :charlie, :delta) RETURNING id", params...)
 
 		var id int64
 		require.NoError(row.Scan(&id), "could not scan record")
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.
-		row = tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=$1", id)
+		row = tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=:id", sql.Named("id", id))
 
 		var aOut, bOut, cOut, dOut StringArray
 		require.NoError(row.Scan(&aOut, &bOut, &cOut, &dOut), "could not scan record")
@@ -187,7 +187,7 @@ func (s *FieldsSqliteTestSuite) TestNullStringArray() {
 		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
-		params := []any{
+		params := []sql.NamedArg{
 			sql.Named("alpha", alpha),
 			sql.Named("bravo", bravo),
 		}
@@ -243,20 +243,20 @@ func (s *FieldsPostgresTestSuite) TestNullStringArray() {
 		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
-		params := []any{
+		params := []sql.NamedArg{
 			sql.Named("alpha", alpha),
 			sql.Named("bravo", bravo),
 			sql.Named("charlie", charlie),
 			sql.Named("delta", delta),
 		}
-		row := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ($1, $2, $3, $4) RETURNING id", params...)
+		row := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES (:alpha, :bravo, :charlie, :delta) RETURNING id", params...)
 
 		var id int64
 		require.NoError(row.Scan(&id), "could not scan record")
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.
-		row = tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=$1", id)
+		row = tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=:id", sql.Named("id", id))
 
 		var aOut, bOut, cOut, dOut NullStringArray
 		require.NoError(row.Scan(&aOut, &bOut, &cOut, &dOut), "could not scan record")
@@ -276,18 +276,18 @@ func (s *FieldsPostgresTestSuite) TestNullStringArray() {
 		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
-		params := []any{
+		params := []sql.NamedArg{
 			sql.Named("bravo", NullStringArray{Valid: false}),
 			sql.Named("delta", NullStringArray{Valid: false}),
 		}
 
-		row := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ('[]', $1, '[]', $2) RETURNING id", params...)
+		row := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ('[]', :bravo, '[]', :delta) RETURNING id", params...)
 
 		var id int64
 		require.NoError(row.Scan(&id), "could not scan record")
 		require.NotZero(id, "expected last insert id to be non-zero")
 
-		row = tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=$1", id)
+		row = tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=:id", sql.Named("id", id))
 
 		var aOut, bOut, cOut, dOut NullStringArray
 		require.NoError(row.Scan(&aOut, &bOut, &cOut, &dOut), "could not scan record")

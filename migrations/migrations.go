@@ -20,12 +20,23 @@ import (
 )
 
 var (
-	ErrNoMigrations     = errors.New("no migrations found")
+	// ErrNoMigrations is returned when [Load] finds no migration files.
+	ErrNoMigrations = errors.New("no migrations found")
+
+	// ErrUnboundMigration is returned when [Migration.SQL] is called without a file system.
 	ErrUnboundMigration = errors.New("migration has been instantiated incorrectly without an underlying fs.FS")
-	ErrInvalidID        = errors.New("migration IDs must be greater than 0")
-	ErrDuplicateID      = errors.New("duplicate migration IDs detected")
-	ErrDuplicateName    = errors.New("duplicate migration names detected")
-	ErrInvalidSequence  = errors.New("migration IDs must be monotonically increasing")
+
+	// ErrInvalidID is returned when a migration ID is zero or negative.
+	ErrInvalidID = errors.New("migration IDs must be greater than 0")
+
+	// ErrDuplicateID is returned when two migrations share the same ID.
+	ErrDuplicateID = errors.New("duplicate migration IDs detected")
+
+	// ErrDuplicateName is returned when two migrations share the same name.
+	ErrDuplicateName = errors.New("duplicate migration names detected")
+
+	// ErrInvalidSequence is returned when migration IDs are not strictly increasing.
+	ErrInvalidSequence = errors.New("migration IDs must be monotonically increasing")
 )
 
 // Process migration file names
@@ -101,8 +112,10 @@ func Load(files fs.FS) (migrations Migrations, err error) {
 	return migrations, nil
 }
 
+// Migrations is an ordered list of schema migrations to apply.
 type Migrations []*Migration
 
+// Apply runs pending migrations using the backend-specific method for provider.
 func (m Migrations) Apply(ctx context.Context, provider string, db *sql.DB, version string) error {
 	// Sort the migrations by ID
 	m.Sort()
@@ -151,6 +164,7 @@ func (m Migrations) Validate() error {
 	return nil
 }
 
+// Sort orders migrations by ID ascending.
 func (m Migrations) Sort() {
 	slices.SortFunc(m, func(a, b *Migration) int {
 		return cmp.Compare(a.ID, b.ID)
@@ -216,6 +230,7 @@ func (m *Migration) SQL() (_ string, err error) {
 	return string(bytes.TrimSpace(data)), nil
 }
 
+// WithFS attaches a file system so [Migration.SQL] can read the migration file.
 func (m *Migration) WithFS(fs fs.FS) {
 	m.fs = fs
 }

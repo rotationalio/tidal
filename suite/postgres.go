@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	_ "github.com/lib/pq"
+	"go.rtnl.ai/tidal"
 	"go.rtnl.ai/x/dsn"
 	"go.rtnl.ai/x/randstr"
 )
@@ -55,33 +55,6 @@ func (p *PostgresProvider) ResolveDSN(databaseURL string) (_ *dsn.DSN, err error
 	return p.dsn, nil
 }
 
-func (p *PostgresProvider) Connect(ctx context.Context, uri *dsn.DSN) (db *sql.DB, err error) {
-	if uri.Provider != dsn.Postgres {
-		return nil, errors.Join(ErrInvalidProvider, ErrPostgresRequired)
-	}
-
-	connStr, pgopts, err := dsn.PGConnectionOptions(uri, nil)
-	if err != nil {
-		return nil, fmt.Errorf("could not get postgres connection options: %w", err)
-	}
-
-	if db, err = sql.Open("postgres", connStr); err != nil {
-		return nil, fmt.Errorf("could not open postgres connection: %w", err)
-	}
-
-	// Apply the connection options.
-	db.SetMaxIdleConns(pgopts.MaxIdleConns)
-	db.SetMaxOpenConns(pgopts.MaxOpenConns)
-	db.SetConnMaxLifetime(pgopts.ConnMaxLifetime)
-	db.SetConnMaxIdleTime(pgopts.ConnMaxIdleTime)
-
-	if err = db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("could not ping database: %w", err)
-	}
-
-	return db, nil
-}
-
 func (p *PostgresProvider) CreateDB(ctx context.Context, uri *dsn.DSN) (_ *dsn.DSN, err error) {
 	// If a non-postgres database is specified then return the original DSN.
 	if uri.Path != "postgres" {
@@ -94,22 +67,19 @@ func (p *PostgresProvider) CreateDB(ctx context.Context, uri *dsn.DSN) (_ *dsn.D
 	p.dsn.Path = "tidal_test_" + randstr.AlphaLower(5) // databases in PG must be lower case
 
 	// Create a new database.
-	var db *sql.DB
-	if db, err = p.Connect(ctx, p.admin); err != nil {
+	var admin *tidal.DB
+	if admin, err = tidal.Open(ctx, p.admin); err != nil {
 		return nil, fmt.Errorf("could not connect to admin database: %w", err)
 	}
+	defer admin.Close()
 
 	stmt := "CREATE DATABASE " + p.dsn.Path
 	if p.admin.User != nil && p.admin.User.Username != "" {
 		stmt += " WITH OWNER " + p.admin.User.Username
 	}
 
-	if _, err = db.ExecContext(ctx, stmt); err != nil {
+	if _, err = admin.ExecContext(ctx, stmt); err != nil {
 		return nil, fmt.Errorf("could not create database: %w", err)
-	}
-
-	if err = db.Close(); err != nil {
-		return nil, fmt.Errorf("could not close database connection: %w", err)
 	}
 
 	return p.dsn, nil
@@ -117,17 +87,14 @@ func (p *PostgresProvider) CreateDB(ctx context.Context, uri *dsn.DSN) (_ *dsn.D
 
 func (p *PostgresProvider) DropDB(ctx context.Context, uri *dsn.DSN) (err error) {
 	if p.admin != nil && p.dsn != nil {
-		var db *sql.DB
-		if db, err = p.Connect(ctx, p.admin); err != nil {
+		var admin *tidal.DB
+		if admin, err = tidal.Open(ctx, p.admin); err != nil {
 			return fmt.Errorf("could not connect to admin database: %w", err)
 		}
+		defer admin.Close()
 
-		if _, err = db.ExecContext(ctx, "DROP DATABASE "+p.dsn.Path); err != nil {
+		if _, err = admin.ExecContext(ctx, "DROP DATABASE "+p.dsn.Path); err != nil {
 			return fmt.Errorf("could not drop database: %w", err)
-		}
-
-		if err = db.Close(); err != nil {
-			return fmt.Errorf("could not close database connection: %w", err)
 		}
 
 		p.admin = nil

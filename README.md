@@ -8,6 +8,109 @@
 
 Tidal provides internal mechanisms for managing SQL databases in Rotational applications. It provides a migrations mechanism for storing schema versions inside the database and automatically applying schema changes. It also provides a CRUD and Model interface for use with direct SQL statements rather than ORM functionality. Tidal is not meant to be generally used but implements the Rotational SQL pattern.
 
+## Connecting
+
+Use [`tidal.Open`](https://pkg.go.dev/go.rtnl.ai/tidal#Open) to connect to a supported database. Pass a [`*dsn.DSN`](https://pkg.go.dev/go.rtnl.ai/x/dsn#DSN) from `go.rtnl.ai/x/dsn` (typically parsed from `DATABASE_URL`):
+
+```go
+package db
+
+import (
+ "context"
+ "os"
+
+ "go.rtnl.ai/tidal"
+ "go.rtnl.ai/x/dsn"
+)
+
+func Connect(ctx context.Context) (*tidal.DB, error) {
+ uri, err := dsn.Parse(os.Getenv("DATABASE_URL"))
+ if err != nil {
+  return nil, err
+ }
+ return tidal.Open(ctx, uri)
+}
+```
+
+`Open` registers the correct SQL driver, applies custom per-db settings from the DSN parameters, and pings the database before returning. It currently supports SQLite3 and Postgres.
+
+The returned [`*tidal.DB`](https://pkg.go.dev/go.rtnl.ai/tidal#DB) embeds `*sql.DB`, so the usual `Close`, `Ping`, and `ExecContext` methods are available directly. The provider is stored on the connection so transactions bind placeholders automatically.
+
+Start a transaction with [`DB.BeginTx`](https://pkg.go.dev/go.rtnl.ai/tidal#DB.BeginTx). It returns a [`tidal.Tx`](https://pkg.go.dev/go.rtnl.ai/tidal#Tx) that accepts canonical `:name` SQL and `sql.NamedArg` arguments regardless of backend and rewrites them for the backend (ex: Postgres placeholders are rewritten to `$1`, `$2`, etc.).
+
+```go
+import "database/sql"
+
+db, err := tidal.Open(ctx, uri)
+if err != nil {
+ return err
+}
+defer db.Close()
+
+tx, err := db.BeginTx(ctx, nil)
+if err != nil {
+ return err
+}
+defer tx.Rollback()
+
+_, err = tx.Exec(
+ "INSERT INTO users (id, email) VALUES (:id, :email)",
+ sql.Named("id", id),
+ sql.Named("email", email),
+)
+```
+
+Pass `tidal.Tx` to [`CRUD`](https://pkg.go.dev/go.rtnl.ai/tidal#CRUD) methods and [`Rows`](https://pkg.go.dev/go.rtnl.ai/tidal#Rows) cursors.
+
+When you need a raw `*sql.DB` — for migrations, third-party libraries, or admin DDL — use the embedded connection: `db.DB`.
+
+If you already have an open `*sql.DB`, wrap it with [`tidal.Wrap`](https://pkg.go.dev/go.rtnl.ai/tidal#Wrap). You still need a parsed `*dsn.DSN` so tidal knows which placeholder style to use:
+
+```go
+uri, _ := dsn.Parse(os.Getenv("DATABASE_URL"))
+sqlDB, _ := sql.Open("sqlite3", uri.Path)
+db := tidal.Wrap(sqlDB, uri)
+```
+
+## CRUD
+
+Implement [`Model`](https://pkg.go.dev/go.rtnl.ai/tidal#Model) on your struct and embed [`BaseModel`](https://pkg.go.dev/go.rtnl.ai/tidal#BaseModel) for ULID ids and timestamps. Build a typed store with [`New`](https://pkg.go.dev/go.rtnl.ai/tidal#New) and run operations inside a transaction:
+
+```go
+crud := tidal.New[*User]("users")
+
+tx, err := db.BeginTx(ctx, nil)
+if err != nil {
+ return err
+}
+defer tx.Rollback()
+
+user := &User{Name: "Ada"}
+_, err = crud.Create(tx, user)
+
+loaded, err := crud.Retrieve(tx, sql.Named("id", user.ID))
+err = crud.Update(tx, user)
+_, err = crud.Delete(tx, sql.Named("id", user.ID))
+
+cursor, err := crud.List(tx, (&tidal.Filter{}).OrderBy("name").Limit(10))
+users, err := cursor.List()
+```
+
+Use [`Clause`](https://pkg.go.dev/go.rtnl.ai/tidal#Clause) for `WHERE` conditions. [`Filter`](https://pkg.go.dev/go.rtnl.ai/tidal#Filter) adds `ORDER BY`, `LIMIT`, and `OFFSET` — combine both when you need filtering and pagination:
+
+```go
+f := (&tidal.Filter{}).OrderBy("-created").Limit(20)
+filter := &tidal.Clause{
+ SQL:  "WHERE status = :status " + f.Clause(),
+ Args: []sql.NamedArg{sql.Named("status", "active")},
+}
+cursor, err := crud.List(tx, filter)
+```
+
+[`Cursor.Close`](https://pkg.go.dev/go.rtnl.ai/tidal#Cursor.Close) rolls back the transaction. Use [`Cursor.CloseRows`](https://pkg.go.dev/go.rtnl.ai/tidal#Cursor.CloseRows) when you want to keep the transaction open for more queries.
+
+See [Fields](#fields) for JSON and array column types.
+
 ## Migrations
 
 The `go.rtnl.ai/tidal/migrations` package manages your database schema by tracking which schema version the database is at and automatically applying any newer migrations on startup. Migrations are plain SQL files, embedded into your binary, and applied inside a transaction so that the schema is only advanced when every pending migration succeeds.
@@ -23,7 +126,7 @@ migrations/
   0003_add_posts_table.sql
 ```
 
-Migration IDs must be greater than zero, unique, and monotonically increasing, and migration names must be unique. These rules are enforced by `Load` (see `Validate`).
+Migration IDs must be greater than zero, strictly increasing, and migration names must be unique. `Load` enforces these rules via `Validate`.
 
 ### Loading Migrations
 
@@ -48,23 +151,26 @@ func Migrations() (migrations.Migrations, error) {
 
 ### Applying Migrations
 
-Call `ApplyPostgres` or `ApplySQLite` (depending on your backend) when the database is first connected to. Both methods create the `migrations` bookkeeping table if it does not exist, look up the last applied migration ID, and apply only the migrations whose ID is greater than that. The `version` string you pass is recorded alongside each migration so you can tell which release applied a given schema change.
+Call `Apply` (or `ApplyPostgres` / `ApplySQLite` directly) after connecting with `tidal.Open`. These methods create the `migrations` bookkeeping table if it does not exist, look up the last applied migration ID, and apply only migrations with a higher ID. The `version` string you pass is recorded alongside each migration so you can tell which release applied a given schema change.
+
+Migrations operate on a raw `*sql.DB`; pass `db.DB` from your `*tidal.DB`:
 
 ```go
 ctx := context.Background()
+
+db, err := tidal.Open(ctx, uri)
+if err != nil {
+ return err
+}
+defer db.Close()
 
 m, err := migrations.Load(migrationFS)
 if err != nil {
  return err
 }
 
-// Postgres: uses an advisory lock so only one instance applies migrations at a time.
-if err := m.ApplyPostgres(ctx, db, "v1.4.0"); err != nil {
- return err
-}
-
-// SQLite: applies all pending migrations in a single write transaction.
-if err := m.ApplySQLite(ctx, db, "v1.4.0"); err != nil {
+// Dispatches to the backend-specific apply method for uri.Provider.
+if err := m.Apply(ctx, uri.Provider, db.DB, "v1.4.0"); err != nil {
  return err
 }
 ```
@@ -76,7 +182,7 @@ Applying migrations is idempotent: if the database is already up to date, no mig
 Use `LastApplied` to read the most recently applied migration record (ID, name, version, and the time it was applied) from the `migrations` table:
 
 ```go
-last, err := migrations.LastApplied(ctx, db)
+last, err := migrations.LastApplied(ctx, db.DB)
 if err != nil {
  return err
 }
@@ -238,6 +344,64 @@ if doc.Authors.Valid {
 ```
 
 A zero-value `NullStringArray{}` (or one with `Valid: false`) is written to the database as SQL `NULL`.
+
+## Model conformance (`ConformsCRUD`)
+
+The `go.rtnl.ai/tidal/suite` package includes [`ConformsCRUD`](https://pkg.go.dev/go.rtnl.ai/tidal/suite#ConformsCRUD), a helper that checks a [`Model`](https://pkg.go.dev/go.rtnl.ai/tidal#Model) implementation against [`tidal.CRUD`](https://pkg.go.dev/go.rtnl.ai/tidal#CRUD). Use it in tests to catch `Fields`, `Params`, and `Scan` mistakes before they show up in production.
+
+It runs three subtests:
+
+1. **Shape** — `Fields` and `Params` line up for each operation, and `tidal.New` produced non-empty SQL. No database access.
+2. **Scan** — builds fake row values from `Params`, feeds them through `Scan`, and compares the result to your factory output. No database access.
+3. **RoundTrip** — runs create, retrieve, list, update, and delete against the real database inside a transaction that is always rolled back.
+
+Wire it into a [`DatabaseSuite`](https://pkg.go.dev/go.rtnl.ai/tidal/suite#DatabaseSuite) test (the suite connects, applies migrations, and tears down the database for you):
+
+```go
+package myapp_test
+
+import (
+ "embed"
+ "testing"
+
+ "github.com/stretchr/testify/require"
+ "go.rtnl.ai/tidal/migrations"
+ "go.rtnl.ai/tidal/suite"
+)
+
+//go:embed testdata/migrations
+var migrationFS embed.FS
+
+type ModelTestSuite struct {
+ suite.DatabaseSuite
+}
+
+func TestModels(t *testing.T) {
+ m, err := migrations.Load(migrationFS)
+ require.NoError(t, err)
+
+ s := &ModelTestSuite{}
+ s.Provider = &suite.SQLiteProvider{} // or &suite.PostgresProvider{}
+ s.Migrations = m
+
+ suite.Run(t, s)
+}
+
+func (s *ModelTestSuite) TestUserCRUDConformance() {
+ suite.ConformsCRUD(&s.DatabaseSuite, suite.CRUDConformance[*User]{
+  Table:  "users",
+  Create: newTestUser, // return a fresh row ready to insert
+  Update: func(u *User) {
+   u.Name = "Updated Name" // mutate the inserted row for the update check
+  },
+  Equal: nil // optional model comparison function; if nil uses a good default
+ })
+}
+```
+
+`Create` should return a valid insert each time — generate unique values (email, slug, etc.) inside the factory. `Update` receives the same instance that was created and inserted.
+
+Provide `Equal` when the default comparison is not enough (for example JSON fields that need normalization). Otherwise the suite compares list results on the `Fields(List)` column subset and tolerates database timestamp truncation (compares times to the second).
 
 ## Testing
 

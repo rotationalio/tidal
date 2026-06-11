@@ -8,13 +8,16 @@ import (
 	"slices"
 )
 
+// JSONB stores raw JSON in a NOT NULL column. SQL NULL and JSON "null" scan as nil.
 type JSONB json.RawMessage
 
+// NullJSONB stores JSON in a nullable column. Check Valid after scanning.
 type NullJSONB struct {
 	Valid bool
 	JSONB JSONB
 }
 
+// JSONNull is the JSON literal null as bytes.
 var JSONNull = []byte("null")
 
 //============================================================================
@@ -49,6 +52,7 @@ func (j JSONB) Normalize() []byte {
 // JSONB Methods
 //============================================================================
 
+// Scan implements [database/sql.Scanner].
 func (j *JSONB) Scan(src any) error {
 	if src == nil {
 		*j = nil
@@ -71,6 +75,7 @@ func (j *JSONB) Scan(src any) error {
 	return nil
 }
 
+// Value implements [database/sql/driver.Valuer].
 func (j JSONB) Value() (driver.Value, error) {
 	if len(j) == 0 {
 		return nil, nil
@@ -78,10 +83,12 @@ func (j JSONB) Value() (driver.Value, error) {
 	return []byte(j), nil
 }
 
+// IsNull reports whether the value is empty or the JSON literal null.
 func (j JSONB) IsNull() bool {
 	return len(j) == 0 || bytes.Equal(j, JSONNull)
 }
 
+// UnmarshalTo decodes the JSON into dst. A nil or empty value is a no-op.
 func (j JSONB) UnmarshalTo(dst any) error {
 	if len(j) == 0 {
 		return nil
@@ -89,6 +96,7 @@ func (j JSONB) UnmarshalTo(dst any) error {
 	return json.Unmarshal(j, dst)
 }
 
+// MarshalFrom JSON-encodes src into the field. A nil src clears the field.
 func (j *JSONB) MarshalFrom(src any) (err error) {
 	if src == nil {
 		*j = nil
@@ -108,6 +116,7 @@ func (j *JSONB) MarshalFrom(src any) (err error) {
 // NullJSONB Methods
 //============================================================================
 
+// Scan implements [database/sql.Scanner].
 func (n *NullJSONB) Scan(src any) (err error) {
 	if src == nil {
 		n.JSONB, n.Valid = nil, false
@@ -123,6 +132,7 @@ func (n *NullJSONB) Scan(src any) (err error) {
 	return nil
 }
 
+// Value implements [database/sql/driver.Valuer].
 func (n NullJSONB) Value() (driver.Value, error) {
 	if !n.Valid {
 		return nil, nil
@@ -130,6 +140,7 @@ func (n NullJSONB) Value() (driver.Value, error) {
 	return n.JSONB.Value()
 }
 
+// UnmarshalTo decodes the JSON when Valid is true.
 func (j NullJSONB) UnmarshalTo(dst any) error {
 	if !j.Valid {
 		return nil
@@ -137,6 +148,7 @@ func (j NullJSONB) UnmarshalTo(dst any) error {
 	return j.JSONB.UnmarshalTo(dst)
 }
 
+// MarshalFrom JSON-encodes src and sets Valid. Nil or JSON null becomes SQL NULL.
 func (j *NullJSONB) MarshalFrom(src any) (err error) {
 	if err = j.JSONB.MarshalFrom(src); err != nil {
 		j.Valid = false

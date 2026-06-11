@@ -21,7 +21,7 @@ func (s *TidalTestSuite) TestCursor() {
 	rows, err := tx.Query(fmt.Sprintf("SELECT %s FROM users", fields))
 	require.NoError(err)
 
-	cursor := tidal.Rows[*User](tidal.Wrap(tx), rows)
+	cursor := tidal.Rows[*User](tx, rows)
 	models, err := cursor.List()
 	require.NoError(err)
 	require.Len(models, 25)

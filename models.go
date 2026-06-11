@@ -29,8 +29,9 @@ type Model interface {
 	Params(Operation) []sql.NamedArg
 }
 
-// Scanner is an interface for *sql.Rows and *sql.Row so that models can implement how
-// they scan fields into their struct without having to specify every field every time.
+// Scanner is an interface for [*Row], [*sql.Row], and [*sql.Rows] so that models can
+// implement how they scan fields into their struct without having to specify every
+// field every time.
 type Scanner interface {
 	Scan(dest ...any) error
 }
@@ -54,6 +55,7 @@ type Validator interface {
 // Model Factory
 //============================================================================
 
+// Make returns a new zero value of M, allocating a pointer when M is a pointer type.
 func Make[M Model]() M {
 	var instance M
 
@@ -105,6 +107,7 @@ func (b *BaseModel) Validate(op Operation) error {
 	return nil
 }
 
+// IsZero reports whether the receiver is nil or all fields are zero.
 func (b *BaseModel) IsZero() bool {
 	return b == nil || (b.ID.IsZero() && b.Created.IsZero() && b.Modified.IsZero())
 }

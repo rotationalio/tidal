@@ -19,7 +19,6 @@ type ListFilter interface {
 
 // Clause is a manual filtering mechanism that implements the ListFilter interface, but
 // requires the user to manually construct the SQL clause and parameters.
-// TODO: Add Tests for this
 type Clause struct {
 	SQL  string
 	Args []sql.NamedArg
@@ -39,7 +38,6 @@ func (c *Clause) Params() []sql.NamedArg {
 // returned and that the parameters in the query are in the correct order.
 //
 // TODO: Handle WHERE clauses.
-// TODO: Add Tests for this.
 type Filter struct {
 	limit    *Limit
 	offset   *Offset
@@ -133,6 +131,7 @@ func (f *Filter) Params() []sql.NamedArg {
 // Ordering
 //============================================================================
 
+// Ordering is a list of sort columns rendered as an ORDER BY clause.
 type Ordering []OrderBy
 
 func (o Ordering) String() string {
@@ -147,6 +146,7 @@ func (o Ordering) String() string {
 	return sb.String()
 }
 
+// OrderBy is one column and sort direction in an [Ordering].
 type OrderBy struct {
 	field     string
 	direction OrderDirection
@@ -156,6 +156,7 @@ func (o OrderBy) String() string {
 	return fmt.Sprintf("%s %s", o.field, o.direction)
 }
 
+// OrderDirection is ASC or DESC in an [OrderBy].
 type OrderDirection uint8
 
 const (
@@ -178,8 +179,10 @@ func (o OrderDirection) String() string {
 // Limit and Offset
 //============================================================================
 
+// Limit is a row cap rendered as a LIMIT clause.
 type Limit int
 
+// Offset is a row skip rendered as an OFFSET clause.
 type Offset int
 
 func (s Limit) String() string {

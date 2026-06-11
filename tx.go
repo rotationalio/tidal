@@ -4,43 +4,54 @@ import (
 	"database/sql"
 )
 
+// Tx is a database transaction that accepts canonical :name SQL and named arguments.
 type Tx interface {
 	Commit() error
 	Rollback() error
 
 	Query(query string, args ...sql.NamedArg) (*sql.Rows, error)
-	QueryRow(query string, args ...sql.NamedArg) *sql.Row
+	QueryRow(query string, args ...sql.NamedArg) *Row
 	Exec(query string, args ...sql.NamedArg) (sql.Result, error)
 }
 
-func Wrap(tx *sql.Tx) Tx {
+// Wraps a sql.Tx and returns a Tx that rewrites placeholders for the given DSN
+// provider (for example [dsn.Postgres] or [dsn.SQLite3]).
+func newTxn(tx *sql.Tx, provider string) Tx {
 	return &Txn{
-		Tx: tx,
+		Tx:          tx,
+		placeholder: PlaceholderFor(provider),
 	}
 }
 
-// Txn is a wrapper around a sql.Tx that implements the Tx interface by requiring
-// sql.NamedArgs rather than any values being passed as variadic arguments.
+// Txn wraps sql.Tx and binds queries through QueryParams before execution.
 type Txn struct {
 	*sql.Tx
+	placeholder PlaceholderType
 }
 
+// Exec runs a query after rewriting placeholders for the configured driver.
 func (t *Txn) Exec(query string, args ...sql.NamedArg) (sql.Result, error) {
-	return t.Tx.Exec(query, QueryArgs(args)...)
-}
-
-func (t *Txn) Query(query string, args ...sql.NamedArg) (*sql.Rows, error) {
-	return t.Tx.Query(query, QueryArgs(args)...)
-}
-
-func (t *Txn) QueryRow(query string, args ...sql.NamedArg) *sql.Row {
-	return t.Tx.QueryRow(query, QueryArgs(args)...)
-}
-
-func QueryArgs(args []sql.NamedArg) []any {
-	out := make([]any, len(args))
-	for i, arg := range args {
-		out[i] = arg.Value
+	p, err := QueryParams(query, args, t.placeholder)
+	if err != nil {
+		return nil, err
 	}
-	return out
+	return t.Tx.Exec(p.SQL(), p.Args()...)
+}
+
+// Query runs a query after rewriting placeholders for the configured driver.
+func (t *Txn) Query(query string, args ...sql.NamedArg) (*sql.Rows, error) {
+	p, err := QueryParams(query, args, t.placeholder)
+	if err != nil {
+		return nil, err
+	}
+	return t.Tx.Query(p.SQL(), p.Args()...)
+}
+
+// QueryRow runs a query after rewriting placeholders for the configured driver.
+func (t *Txn) QueryRow(query string, args ...sql.NamedArg) *Row {
+	p, err := QueryParams(query, args, t.placeholder)
+	if err != nil {
+		return &Row{err: err}
+	}
+	return &Row{row: t.Tx.QueryRow(p.SQL(), p.Args()...)}
 }
