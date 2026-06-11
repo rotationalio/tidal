@@ -62,7 +62,7 @@ func TestSQLite3(t *testing.T) {
 //============================================================================
 
 func (s *TidalTestSuite) TestUserCRUDConformance() {
-	suite.ModelConformsCRUD(&s.DatabaseSuite, suite.CRUDConformance[*User]{
+	suite.ConformsCRUD(&s.DatabaseSuite, suite.CRUDConformance[*User]{
 		Table:  "users",
 		Create: newConformanceUser,
 		Update: func(u *User) {

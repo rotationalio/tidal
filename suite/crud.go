@@ -49,7 +49,7 @@ type CRUDConformance[M tidal.Model] struct {
 //
 // This does not mock tidal, patch the model, or substitute a fake database for
 // round-trip. The only "fake" piece is mockScanner, used exclusively in the Scan phase.
-func ModelConformsCRUD[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M]) {
+func ConformsCRUD[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M]) {
 	s.T().Helper()
 	require := s.Require()
 	require.NotEmpty(cfg.Table, "table is required")
@@ -211,7 +211,7 @@ func testCRUDRoundTrip[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M], 
 
 	// SQLite blocks writes in the same transaction while sql.Rows is open; close
 	// the result set only (not the transaction — cursor.Close would Rollback).
-	require.NoError(tidal.CloseRows(cursor), "List cursor close failed")
+	require.NoError(cursor.CloseRows(), "List cursor close failed")
 	require.Len(models, 1, "List should return exactly one model")
 
 	// Compare only List columns (not full struct — List Scan omits password, etc.).
@@ -401,26 +401,72 @@ func fieldByColumn(tb testing.TB, v reflect.Value, column string) (reflect.Value
 // Maps Go field names to column names (ID -> id, LastSeen -> last_seen).
 func columnName(tb testing.TB, field string) string {
 	tb.Helper()
-	// Mirrors tidal's default column naming: CamelCase → snake_case.
-	// Inserts '_' before an uppercase rune when it starts a new word:
-	//   LastSeen  → last_seen  (lower→upper boundary)
-	//   UserID    → user_id    (upper followed by upper+lower, e.g. "ID")
 	var b strings.Builder
 	for i, r := range field {
-		if i > 0 && unicode.IsUpper(r) {
+		if i > 0 {
 			prev := rune(field[i-1])
-			var next rune
-			if i+1 < len(field) {
-				next = rune(field[i+1])
-			}
-			// Split on lower→Upper (LastSeen) or Upper→Upper+lower (UserID).
-			if unicode.IsLower(prev) || (next != 0 && unicode.IsLower(next)) {
-				b.WriteByte('_')
+			if unicode.IsUpper(r) || (unicode.IsDigit(prev) && unicode.IsLetter(r)) {
+				var next rune
+				if i+1 < len(field) {
+					next = rune(field[i+1])
+				}
+				if shouldSplitColumnName(field, i, r, prev, next) {
+					b.WriteByte('_')
+				}
 			}
 		}
 		b.WriteRune(unicode.ToLower(r))
 	}
 	return b.String()
+}
+
+// shouldSplitColumnName applies CamelCase → snake_case word-boundary rules:
+//
+//  1. Classic camelCase:     lower → Upper → lower     (LastSeen, GoVariable)
+//  2. Acronym → word:        Upper → Upper... → lower  (URLPath, HTTPHeader)
+//  3. Word → acronym suffix: lower → Upper...          (UserID, UserA, etc.)
+//  4. Acronym particle:      Cap–lower–Cap           (DoB, MoU — suppress split)
+//  5. Digit boundary:        digit → letter          (v2API, v2api, OAuth2Token)
+func shouldSplitColumnName(field string, i int, r, prev, next rune) bool {
+	split := false
+
+	// Rule 1: lower → Upper → lower
+	if unicode.IsLower(prev) && next != 0 && unicode.IsLower(next) {
+		split = true
+	}
+
+	// Rule 2: upper → Upper → lower (skip OA… / IPv… continuations at i==1)
+	if unicode.IsUpper(prev) && next != 0 && unicode.IsLower(next) {
+		if !(i == 1 && unicode.IsUpper(rune(field[0])) && unicode.IsUpper(r)) {
+			split = true
+		}
+	}
+
+	// Rule 3: lower → Upper… — trailing initial (UserA) or uppercase suffix (UserID)
+	if unicode.IsLower(prev) && (next == 0 || unicode.IsUpper(next)) {
+		split = true
+	}
+
+	// Rule 4: Cap–lower–Cap particle — suppress split (DoB, QoL) or undo rule 3
+	// when closing before the next word (QoLUser).
+	if i >= 2 && unicode.IsLower(prev) && unicode.IsUpper(rune(field[i-2])) {
+		switch {
+		case next != 0 && unicode.IsUpper(next):
+			// like 'QoLUser' — suppress split (wait for rule 2 at the next word)
+			split = false
+		case (next == 0 || unicode.IsUpper(next)) &&
+			(i+1 >= len(field) || !unicode.IsUpper(rune(field[i+1]))):
+			// like 'DoB', QoL — suppress split (single closing upper)
+			split = false
+		}
+	}
+
+	// Rule 5: digit → letter (version or numeric prefix before suffix)
+	if unicode.IsDigit(prev) && unicode.IsLetter(r) {
+		split = true
+	}
+
+	return split
 }
 
 // Database drivers often truncate timestamps; compare at second precision in UTC.

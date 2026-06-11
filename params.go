@@ -23,11 +23,11 @@ func QueryParams(query string, args []sql.NamedArg, ph PlaceholderType) (*BoundQ
 		}
 		return &BoundQuery{query: query, values: out}, nil
 	case Ordered:
-		return rewriteQuery(query, args, orderedPlaceholder)
+		return rewriteQuery(query, args, orderedPlaceholder, true)
 	case Positional:
-		return rewriteQuery(query, args, positionalPlaceholder)
+		return rewriteQuery(query, args, positionalPlaceholder, false)
 	case AtP:
-		return rewriteQuery(query, args, atpPlaceholder)
+		return rewriteQuery(query, args, atpPlaceholder, true)
 	default:
 		return nil, ErrUnsupportedPlaceholder
 	}
@@ -61,11 +61,19 @@ func positionalPlaceholder(_ int) string { return "?" }
 func atpPlaceholder(n int) string { return fmt.Sprintf("@p%d", n) }
 
 // rewriteQuery replaces :name tokens in left-to-right order and builds matching args.
-func rewriteQuery(query string, args []sql.NamedArg, ph placeholderFunc) (*BoundQuery, error) {
+// When reuseByName is true, numbered placeholders ($1, @p1) reuse the same index for
+// repeated :name tokens. Anonymous placeholders cannot reuse a single arg slot, so
+// reuseByName must be false for positional only placeholders (like '?').
+func rewriteQuery(query string, args []sql.NamedArg, ph placeholderFunc, reuseByName bool) (*BoundQuery, error) {
 	var (
-		b      strings.Builder
-		values []any
+		b           strings.Builder
+		values      []any
+		indexByName map[string]int
 	)
+
+	if reuseByName {
+		indexByName = make(map[string]int, len(args))
+	}
 
 	byName := make(map[string]any, len(args))
 	for _, arg := range args {
@@ -76,6 +84,17 @@ func rewriteQuery(query string, args []sql.NamedArg, ph placeholderFunc) (*Bound
 	for i := 0; i < len(query); {
 		// Check if the current character is ':' indicating the start of a named placeholder (e.g., :name)
 		if query[i] == ':' && i+1 < len(query) {
+			// Postgres cast operator (::type) — copy through without binding.
+			if query[i+1] == ':' {
+				j := i + 2
+				for j < len(query) && isParamIdent(query[j]) {
+					j++
+				}
+				b.WriteString(query[i:j])
+				i = j
+				continue
+			}
+
 			// Continue scanning while the characters are valid identifier characters (letters, digits, or '_')
 			j := i + 1
 			for j < len(query) && isParamIdent(query[j]) {
@@ -91,11 +110,18 @@ func rewriteQuery(query string, args []sql.NamedArg, ph placeholderFunc) (*Bound
 					return nil, &MissingArgumentError{Name: name}
 				}
 
-				// Add the value to the values slice that will be the args for the query
-				values = append(values, value)
-
-				// Write the corresponding placeholder into the query string (e.g., $1, ?, @p, etc.)
-				b.WriteString(ph(len(values)))
+				// If the same :name token appears twice, reuse the same
+				// placeholder index if reuseByName is true.
+				if idx, ok := indexByName[name]; ok {
+					b.WriteString(ph(idx))
+				} else {
+					values = append(values, value)
+					idx := len(values)
+					if reuseByName {
+						indexByName[name] = idx
+					}
+					b.WriteString(ph(idx))
+				}
 
 				// Move index i to just after the parameter name we just substituted
 				i = j

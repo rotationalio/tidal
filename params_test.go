@@ -82,4 +82,54 @@ func TestQueryParams(t *testing.T) {
 		require.ErrorAs(t, err, &missing)
 		require.Equal(t, "sku", missing.Name)
 	})
+
+	// Placeholder Rewriter Edge Cases
+
+	// Bound arg values follow left-to-right query appearance, not the NamedArg slice order.
+	t.Run("ArgOrderFollowsQueryText", func(t *testing.T) {
+		b, err := QueryParams(
+			"SELECT * FROM t WHERE a = :b AND b = :a",
+			[]sql.NamedArg{sql.Named("a", 1), sql.Named("b", 2)},
+			Ordered,
+		)
+		require.NoError(t, err)
+		require.Equal(t, "SELECT * FROM t WHERE a = $1 AND b = $2", b.SQL())
+		require.Equal(t, []any{2, 1}, b.Args())
+	})
+
+	// Repeated :name tokens reuse the same numbered placeholder and bind once.
+	t.Run("RepeatedPlaceholderOrdered", func(t *testing.T) {
+		b, err := QueryParams(
+			"SELECT * FROM t WHERE id = :id OR parent_id = :id",
+			[]sql.NamedArg{sql.Named("id", 42)},
+			Ordered,
+		)
+		require.NoError(t, err)
+		require.Equal(t, "SELECT * FROM t WHERE id = $1 OR parent_id = $1", b.SQL())
+		require.Equal(t, []any{42}, b.Args())
+	})
+
+	// Anonymous ? placeholders still need one arg per occurrence — no index reuse.
+	t.Run("RepeatedPlaceholderPositional", func(t *testing.T) {
+		b, err := QueryParams(
+			"SELECT * FROM t WHERE id = :id OR parent_id = :id",
+			[]sql.NamedArg{sql.Named("id", 42)},
+			Positional,
+		)
+		require.NoError(t, err)
+		require.Equal(t, "SELECT * FROM t WHERE id = ? OR parent_id = ?", b.SQL())
+		require.Equal(t, []any{42, 42}, b.Args())
+	})
+
+	// Postgres ::type casts must pass through without being treated as :name placeholders.
+	t.Run("PostgresCastWithNamedArg", func(t *testing.T) {
+		b, err := QueryParams(
+			"SELECT * FROM t WHERE id::text = :id",
+			[]sql.NamedArg{sql.Named("id", "abc")},
+			Ordered,
+		)
+		require.NoError(t, err)
+		require.Equal(t, "SELECT * FROM t WHERE id::text = $1", b.SQL())
+		require.Equal(t, []any{"abc"}, b.Args())
+	})
 }

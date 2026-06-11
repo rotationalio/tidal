@@ -5,10 +5,27 @@ import "database/sql"
 // Cursor is a generic interface that allows for iteration and instantiation over a
 // collection of models usually from the rows of a database query.
 type Cursor[M Model] interface {
+	// Advances the cursor to the next row; returns false when there are no more
+	// rows.
 	Next() bool
+
+	// Returns the current row as a model instance. It is only valid after
+	// [Cursor.Next] has been called and returned true.
 	Model() (M, error)
+
+	// Reads every remaining row into a slice.
 	List() ([]M, error)
+
+	// Releases the cursor and ends its associated transaction. Use
+	// [Cursor.CloseRows] when you want to reuse the transaction for subsequent
+	// operations.
 	Close() error
+
+	// Releases the result set without ending the transaction. Use this when
+	// the same transaction will run more queries after the cursor is closed.
+	CloseRows() error
+
+	// Returns the first error encountered during iteration.
 	Err() error
 }
 
@@ -52,19 +69,13 @@ func (c *rowsCursor[M]) List() (models []M, err error) {
 	return models, c.Err()
 }
 
-// Closes the underlying result set and rolls back the transaction. Use [CloseRows]
-// when you want to reuse the transaction for subsequent operations.
 func (c *rowsCursor[M]) Close() error {
 	c.tx.Rollback()
 	return c.rows.Close()
 }
 
-// Closes the underlying result set without ending the transaction.
-func CloseRows[M Model](c Cursor[M]) error {
-	if rc, ok := c.(*rowsCursor[M]); ok {
-		return rc.rows.Close()
-	}
-	return nil
+func (c *rowsCursor[M]) CloseRows() error {
+	return c.rows.Close()
 }
 
 func (c *rowsCursor[M]) Err() error {
@@ -75,6 +86,8 @@ func (c *rowsCursor[M]) Err() error {
 // Empty Cursor
 //============================================================================
 
+// Returns a [Cursor] that returns no rows and always returns the provided
+// error, which may be nil.
 func Empty[M Model](err error) Cursor[M] {
 	return &emptyCursor[M]{
 		err: err,
@@ -98,6 +111,10 @@ func (c *emptyCursor[M]) List() ([]M, error) {
 }
 
 func (c *emptyCursor[M]) Close() error {
+	return c.err
+}
+
+func (c *emptyCursor[M]) CloseRows() error {
 	return c.err
 }
 

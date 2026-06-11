@@ -19,7 +19,6 @@ type ListFilter interface {
 
 // Clause is a manual filtering mechanism that implements the ListFilter interface, but
 // requires the user to manually construct the SQL clause and parameters.
-// TODO: Add Tests for this
 type Clause struct {
 	SQL  string
 	Args []sql.NamedArg
@@ -39,7 +38,6 @@ func (c *Clause) Params() []sql.NamedArg {
 // returned and that the parameters in the query are in the correct order.
 //
 // TODO: Handle WHERE clauses.
-// TODO: Add Tests for this.
 type Filter struct {
 	limit    *Limit
 	offset   *Offset
