@@ -1,5 +1,6 @@
 package tidal
 
+// Operation identifies which CRUD step a [Model] method is serving.
 type Operation uint8
 
 const (
@@ -11,11 +12,14 @@ const (
 	Delete
 )
 
-var (
-	SelectOperations  = [2]Operation{List, Retrieve}
-	EditOperations    = [3]Operation{Create, Update, Delete}
-	PrepareOperations = [2]Operation{Create, Update}
-)
+// SelectOperations lists read-only [Operation] values.
+var SelectOperations = [2]Operation{List, Retrieve}
+
+// EditOperations lists write [Operation] values.
+var EditOperations = [3]Operation{Create, Update, Delete}
+
+// PrepareOperations lists [Operation] values that call [Preparer].
+var PrepareOperations = [2]Operation{Create, Update}
 
 func (o Operation) String() string {
 	switch o {

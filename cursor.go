@@ -33,6 +33,7 @@ type Cursor[M Model] interface {
 // SQL Rows Cursor
 //============================================================================
 
+// Rows wraps [sql.Rows] as a [Cursor] for type M.
 func Rows[M Model](tx Tx, rows *sql.Rows) Cursor[M] {
 	return &rowsCursor[M]{
 		tx:   tx,

@@ -16,12 +16,15 @@ type QuerySet struct {
 	Delete   string // Must not contain a WHERE clause.
 }
 
+// CRUD runs create, read, update, delete, and list operations for a [Model] type.
+// Build one with [New] and call its methods inside a [Tx].
 type CRUD[M Model] struct {
 	Queries QuerySet
 	fields  map[Operation][]string
 	params  map[Operation][]string
 }
 
+// New builds a CRUD store for table using the [Model] type M to derive SQL and parameters.
 func New[M Model](table string) *CRUD[M] {
 	c := &CRUD[M]{
 		fields: make(map[Operation][]string),
@@ -52,6 +55,7 @@ func New[M Model](table string) *CRUD[M] {
 	return c
 }
 
+// List returns a [Cursor] over rows matching filter. Pass nil for no filter clause.
 func (c *CRUD[M]) List(tx Tx, filter ListFilter) (_ Cursor[M], err error) {
 	var params []sql.NamedArg
 	query := c.Queries.List
@@ -70,6 +74,7 @@ func (c *CRUD[M]) List(tx Tx, filter ListFilter) (_ Cursor[M], err error) {
 	return Rows[M](tx, rows), nil
 }
 
+// Create inserts m. [Preparer] and [Validator] hooks run when implemented.
 func (c *CRUD[M]) Create(tx Tx, m M) (result sql.Result, err error) {
 	if prepare, ok := any(m).(Preparer); ok {
 		prepare.Prepare(Create)
@@ -82,6 +87,7 @@ func (c *CRUD[M]) Create(tx Tx, m M) (result sql.Result, err error) {
 	return tx.Exec(c.Queries.Create, m.Params(Create)...)
 }
 
+// Retrieve loads the row where the id column equals id.
 func (c *CRUD[M]) Retrieve(tx Tx, id sql.NamedArg) (m M, err error) {
 	m = Make[M]()
 	query := c.Queries.Retrieve + id.Name + " = :" + id.Name
@@ -91,6 +97,7 @@ func (c *CRUD[M]) Retrieve(tx Tx, id sql.NamedArg) (m M, err error) {
 	return m, nil
 }
 
+// Update saves m. Returns [ErrNotFound] when no row matches m's id.
 func (c *CRUD[M]) Update(tx Tx, m M) (err error) {
 	if prepare, ok := any(m).(Preparer); ok {
 		prepare.Prepare(Update)
@@ -110,11 +117,13 @@ func (c *CRUD[M]) Update(tx Tx, m M) (err error) {
 	return nil
 }
 
+// Delete removes the row where the id column equals id.
 func (c *CRUD[M]) Delete(tx Tx, id sql.NamedArg) (result sql.Result, err error) {
 	query := c.Queries.Delete + id.Name + " = :" + id.Name
 	return tx.Exec(query, id)
 }
 
+// Fields returns the column names for op, cached after the first call.
 func (c *CRUD[M]) Fields(op Operation) (fields []string) {
 	fields, ok := c.fields[op]
 	if !ok {
@@ -125,6 +134,7 @@ func (c *CRUD[M]) Fields(op Operation) (fields []string) {
 	return fields
 }
 
+// Params returns column names and :name placeholders for op.
 func (c *CRUD[M]) Params(op Operation) (fields []string, placeholders []string) {
 	names, ok := c.params[op]
 	if !ok {
@@ -143,19 +153,23 @@ func (c *CRUD[M]) Params(op Operation) (fields []string, placeholders []string) 
 	return names, placeholders
 }
 
+// ListQuery builds the SELECT used by [CRUD.List].
 func (c *CRUD[M]) ListQuery(table string) string {
 	return fmt.Sprintf("SELECT %s FROM %s", strings.Join(c.Fields(List), ", "), table)
 }
 
+// CreateQuery builds the INSERT used by [CRUD.Create].
 func (c *CRUD[M]) CreateQuery(table string) string {
 	fields, placeholders := c.Params(Create)
 	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, strings.Join(fields, ", "), strings.Join(placeholders, ", "))
 }
 
+// RetrieveQuery builds the SELECT prefix used by [CRUD.Retrieve] (caller appends the id predicate).
 func (c *CRUD[M]) RetrieveQuery(table string) string {
 	return fmt.Sprintf("SELECT %s FROM %s WHERE ", strings.Join(c.Fields(Retrieve), ", "), table)
 }
 
+// UpdateQuery builds the UPDATE used by [CRUD.Update].
 func (c *CRUD[M]) UpdateQuery(table string, fieldID string) string {
 	fields, placeholders := c.Params(Update)
 	setters := make([]string, 0, len(fields))
@@ -168,6 +182,7 @@ func (c *CRUD[M]) UpdateQuery(table string, fieldID string) string {
 	return fmt.Sprintf("UPDATE %s SET %s WHERE %s=:%s", table, strings.Join(setters, ", "), fieldID, fieldID)
 }
 
+// DeleteQuery builds the DELETE prefix used by [CRUD.Delete] (caller appends the id predicate).
 func (c *CRUD[M]) DeleteQuery(table string) string {
 	return fmt.Sprintf("DELETE FROM %s WHERE ", table)
 }

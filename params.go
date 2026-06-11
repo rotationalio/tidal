@@ -64,6 +64,10 @@ func atpPlaceholder(n int) string { return fmt.Sprintf("@p%d", n) }
 // When reuseByName is true, numbered placeholders ($1, @p1) reuse the same index for
 // repeated :name tokens. Anonymous placeholders cannot reuse a single arg slot, so
 // reuseByName must be false for positional only placeholders (like '?').
+//
+// NOTE: This function is very performant, and caching is probably not needed; this
+// was confirmed in benchmarks with cached vs uncached versions; the cached version
+// was complex and only ~5% faster.
 func rewriteQuery(query string, args []sql.NamedArg, ph placeholderFunc, reuseByName bool) (*BoundQuery, error) {
 	var (
 		b           strings.Builder

@@ -55,6 +55,7 @@ type Validator interface {
 // Model Factory
 //============================================================================
 
+// Make returns a new zero value of M, allocating a pointer when M is a pointer type.
 func Make[M Model]() M {
 	var instance M
 
@@ -106,6 +107,7 @@ func (b *BaseModel) Validate(op Operation) error {
 	return nil
 }
 
+// IsZero reports whether the receiver is nil or all fields are zero.
 func (b *BaseModel) IsZero() bool {
 	return b == nil || (b.ID.IsZero() && b.Created.IsZero() && b.Modified.IsZero())
 }
