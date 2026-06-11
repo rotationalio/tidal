@@ -8,6 +8,69 @@
 
 Tidal provides internal mechanisms for managing SQL databases in Rotational applications. It provides a migrations mechanism for storing schema versions inside the database and automatically applying schema changes. It also provides a CRUD and Model interface for use with direct SQL statements rather than ORM functionality. Tidal is not meant to be generally used but implements the Rotational SQL pattern.
 
+## Connecting
+
+Use [`tidal.Open`](https://pkg.go.dev/go.rtnl.ai/tidal#Open) to connect to a supported database. Pass a [`*dsn.DSN`](https://pkg.go.dev/go.rtnl.ai/x/dsn#DSN) from `go.rtnl.ai/x/dsn` (typically parsed from `DATABASE_URL`):
+
+```go
+package db
+
+import (
+ "context"
+ "os"
+
+ "go.rtnl.ai/tidal"
+ "go.rtnl.ai/x/dsn"
+)
+
+func Connect(ctx context.Context) (*tidal.DB, error) {
+ uri, err := dsn.Parse(os.Getenv("DATABASE_URL"))
+ if err != nil {
+  return nil, err
+ }
+ return tidal.Open(ctx, uri)
+}
+```
+
+`Open` registers the correct SQL driver, applies custom per-db settings from the DSN parameters, and pings the database before returning. It currently supports SQLite3 and Postgres.
+
+The returned [`*tidal.DB`](https://pkg.go.dev/go.rtnl.ai/tidal#DB) embeds `*sql.DB`, so the usual `Close`, `Ping`, and `ExecContext` methods are available directly. The provider is stored on the connection so transactions bind placeholders automatically.
+
+Start a transaction with [`DB.BeginTx`](https://pkg.go.dev/go.rtnl.ai/tidal#DB.BeginTx). It returns a [`tidal.Tx`](https://pkg.go.dev/go.rtnl.ai/tidal#Tx) that accepts canonical `:name` SQL and `sql.NamedArg` arguments regardless of backend and rewrites them for the backend (ex: Postgres placeholders are rewritten to `$1`, `$2`, etc.).
+
+```go
+import "database/sql"
+
+db, err := tidal.Open(ctx, uri)
+if err != nil {
+ return err
+}
+defer db.Close()
+
+tx, err := db.BeginTx(ctx, nil)
+if err != nil {
+ return err
+}
+defer tx.Rollback()
+
+_, err = tx.Exec(
+ "INSERT INTO users (id, email) VALUES (:id, :email)",
+ sql.Named("id", id),
+ sql.Named("email", email),
+)
+```
+
+Pass `tidal.Tx` to [`CRUD`](https://pkg.go.dev/go.rtnl.ai/tidal#CRUD) methods and [`Rows`](https://pkg.go.dev/go.rtnl.ai/tidal#Rows) cursors.
+
+When you need a raw `*sql.DB` — for migrations, third-party libraries, or admin DDL — use the embedded connection: `db.DB`.
+
+If you already have an open `*sql.DB`, wrap it with [`tidal.Wrap`](https://pkg.go.dev/go.rtnl.ai/tidal#Wrap):
+
+```go
+sqlDB, _ = sql.Open("sqlite3", uri.Path)
+db := tidal.Wrap(sqlDB, uri)
+```
+
 ## Migrations
 
 The `go.rtnl.ai/tidal/migrations` package manages your database schema by tracking which schema version the database is at and automatically applying any newer migrations on startup. Migrations are plain SQL files, embedded into your binary, and applied inside a transaction so that the schema is only advanced when every pending migration succeeds.
@@ -48,10 +111,18 @@ func Migrations() (migrations.Migrations, error) {
 
 ### Applying Migrations
 
-Call `ApplyPostgres` or `ApplySQLite` (depending on your backend) when the database is first connected to. Both methods create the `migrations` bookkeeping table if it does not exist, look up the last applied migration ID, and apply only the migrations whose ID is greater than that. The `version` string you pass is recorded alongside each migration so you can tell which release applied a given schema change.
+Call `ApplyPostgres` or `ApplySQLite` (depending on your backend) after connecting with `tidal.Open`. Both methods create the `migrations` bookkeeping table if it does not exist, look up the last applied migration ID, and apply only the migrations whose ID is greater than that. The `version` string you pass is recorded alongside each migration so you can tell which release applied a given schema change.
+
+Migrations operate on a raw `*sql.DB`; pass `db.DB` from your `*tidal.DB`:
 
 ```go
 ctx := context.Background()
+
+db, err := tidal.Open(ctx, uri)
+if err != nil {
+ return err
+}
+defer db.Close()
 
 m, err := migrations.Load(migrationFS)
 if err != nil {
@@ -59,12 +130,12 @@ if err != nil {
 }
 
 // Postgres: uses an advisory lock so only one instance applies migrations at a time.
-if err := m.ApplyPostgres(ctx, db, "v1.4.0"); err != nil {
+if err := m.ApplyPostgres(ctx, db.DB, "v1.4.0"); err != nil {
  return err
 }
 
 // SQLite: applies all pending migrations in a single write transaction.
-if err := m.ApplySQLite(ctx, db, "v1.4.0"); err != nil {
+if err := m.ApplySQLite(ctx, db.DB, "v1.4.0"); err != nil {
  return err
 }
 ```
@@ -76,7 +147,7 @@ Applying migrations is idempotent: if the database is already up to date, no mig
 Use `LastApplied` to read the most recently applied migration record (ID, name, version, and the time it was applied) from the `migrations` table:
 
 ```go
-last, err := migrations.LastApplied(ctx, db)
+last, err := migrations.LastApplied(ctx, db.DB)
 if err != nil {
  return err
 }

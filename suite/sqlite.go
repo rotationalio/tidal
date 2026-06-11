@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 
 	"go.rtnl.ai/x/dsn"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 type SQLiteSuite struct {
@@ -58,22 +56,6 @@ func (p *SQLiteProvider) ResolveDSN(databaseURL string) (_ *dsn.DSN, err error) 
 		}
 	}
 	return p.dsn, nil
-}
-
-func (p *SQLiteProvider) Connect(ctx context.Context, uri *dsn.DSN) (db *sql.DB, err error) {
-	if uri.Provider != dsn.SQLite3 {
-		return nil, errors.Join(ErrInvalidProvider, ErrSqliteRequired)
-	}
-
-	if db, err = sql.Open("sqlite3", uri.Path); err != nil {
-		return nil, fmt.Errorf("could not connect to database: %w", err)
-	}
-
-	if err = db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("could not ping database: %w", err)
-	}
-
-	return db, nil
 }
 
 func (p *SQLiteProvider) CreateDB(ctx context.Context, uri *dsn.DSN) (*dsn.DSN, error) {

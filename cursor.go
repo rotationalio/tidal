@@ -52,9 +52,19 @@ func (c *rowsCursor[M]) List() (models []M, err error) {
 	return models, c.Err()
 }
 
+// Closes the underlying result set and rolls back the transaction. Use [CloseRows]
+// when you want to reuse the transaction for subsequent operations.
 func (c *rowsCursor[M]) Close() error {
 	c.tx.Rollback()
 	return c.rows.Close()
+}
+
+// Closes the underlying result set without ending the transaction.
+func CloseRows[M Model](c Cursor[M]) error {
+	if rc, ok := c.(*rowsCursor[M]); ok {
+		return rc.rows.Close()
+	}
+	return nil
 }
 
 func (c *rowsCursor[M]) Err() error {

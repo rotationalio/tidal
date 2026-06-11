@@ -45,7 +45,7 @@ func (s *FieldsSqliteTestSuite) TestJSONB() {
 		defer tx.Rollback()
 
 		// Insert a new record into the database.
-		params := []any{
+		params := []sql.NamedArg{
 			sql.Named("alpha", JSONB(alphaBytes)),
 			sql.Named("bravo", JSONB(bravoBytes)),
 		}
@@ -93,7 +93,7 @@ func (s *FieldsSqliteTestSuite) TestJSONB() {
 		defer tx.Rollback()
 
 		// Insert a new record into the database.
-		params := []any{
+		params := []sql.NamedArg{
 			sql.Named("alpha", `{}`),
 			sql.Named("bravo", nil),
 		}
@@ -120,21 +120,21 @@ func (s *FieldsPostgresTestSuite) TestJSONB() {
 		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
-		params := []any{
+		params := []sql.NamedArg{
 			sql.Named("alpha", JSONB(alphaBytes)),
 			sql.Named("bravo", JSONB(bravoBytes)),
 			sql.Named("charlie", JSONB(charlieBytes)),
 			sql.Named("delta", JSONB(deltaBytes)),
 		}
 
-		ins := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ($1, $2, $3, $4) RETURNING id", params...)
+		ins := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES (:alpha, :bravo, :charlie, :delta) RETURNING id", params...)
 
 		var id int64
 		require.NoError(ins.Scan(&id), "could not insert record or scan ID")
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.
-		row := tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=$1", id)
+		row := tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=:id", sql.Named("id", id))
 
 		var alpha, bravo, charlie, delta JSONB
 		require.NoError(row.Scan(&alpha, &bravo, &charlie, &delta), "could not scan record")
@@ -157,7 +157,7 @@ func (s *FieldsPostgresTestSuite) TestJSONB() {
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.
-		row := tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=$1", id)
+		row := tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=:id", sql.Named("id", id))
 
 		var alpha, bravo, charlie, delta JSONB
 		require.NoError(row.Scan(&alpha, &bravo, &charlie, &delta), "could not scan record")
@@ -172,18 +172,18 @@ func (s *FieldsPostgresTestSuite) TestJSONB() {
 		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
-		params := []any{
+		params := []sql.NamedArg{
 			sql.Named("bravo", nil),
 			sql.Named("delta", nil),
 		}
-		ins := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ('{}', $1, '{}', $2) RETURNING id", params...)
+		ins := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ('{}', :bravo, '{}', :delta) RETURNING id", params...)
 
 		var id int64
 		require.NoError(ins.Scan(&id), "could not scan record")
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.
-		row := tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=$1", id)
+		row := tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=:id", sql.Named("id", id))
 
 		var alpha, bravo, charlie, delta JSONB
 		require.NoError(row.Scan(&alpha, &bravo, &charlie, &delta), "could not scan record")
@@ -270,7 +270,7 @@ func (s *FieldsSqliteTestSuite) TestNullJSONB() {
 		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
-		params := []any{
+		params := []sql.NamedArg{
 			sql.Named("alpha", NullJSONB{JSONB: JSONB(alphaBytes), Valid: true}),
 			sql.Named("bravo", NullJSONB{JSONB: JSONB(bravoBytes), Valid: true}),
 		}
@@ -319,20 +319,20 @@ func (s *FieldsPostgresTestSuite) TestNullJSONB() {
 		tx := s.BeginTx(nil)
 		defer tx.Rollback()
 
-		params := []any{
+		params := []sql.NamedArg{
 			sql.Named("alpha", NullJSONB{JSONB: JSONB(alphaBytes), Valid: true}),
 			sql.Named("bravo", NullJSONB{JSONB: JSONB(bravoBytes), Valid: true}),
 			sql.Named("charlie", NullJSONB{JSONB: JSONB(charlieBytes), Valid: true}),
 			sql.Named("delta", NullJSONB{JSONB: JSONB(deltaBytes), Valid: true}),
 		}
-		ins := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES ($1, $2, $3, $4) RETURNING id", params...)
+		ins := tx.QueryRow("INSERT INTO testing (alpha, bravo, charlie, delta) VALUES (:alpha, :bravo, :charlie, :delta) RETURNING id", params...)
 
 		var id int64
 		require.NoError(ins.Scan(&id), "could not insert record or scan ID")
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.
-		row := tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=$1", id)
+		row := tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=:id", sql.Named("id", id))
 
 		var alpha, bravo, charlie, delta NullJSONB
 		require.NoError(row.Scan(&alpha, &bravo, &charlie, &delta), "could not scan record")
@@ -360,7 +360,7 @@ func (s *FieldsPostgresTestSuite) TestNullJSONB() {
 		require.NotZero(id, "expected last insert id to be non-zero")
 
 		// Fetch the record from the database.
-		row := tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=$1", id)
+		row := tx.QueryRow("SELECT alpha, bravo, charlie, delta FROM testing WHERE id=:id", sql.Named("id", id))
 
 		var alpha, bravo, charlie, delta NullJSONB
 		require.NoError(row.Scan(&alpha, &bravo, &charlie, &delta), "could not scan record")

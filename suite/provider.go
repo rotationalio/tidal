@@ -9,7 +9,7 @@ import (
 
 // A database provider is used to power a database test suite. The provider is meant to
 // implement database-specific functionality for the test suite, e.g. different SQL
-// syntaxes, different query patterns, etc.
+// syntaxes, different query patterns, etc. Use [tidal.Open] to connect to the database.
 type Provider interface {
 	// Resolve DSN must return a DSN for the database that allows connections while
 	// tests are running (possible in parallel with other test suites). It should
@@ -21,9 +21,6 @@ type Provider interface {
 	// CreateDB is called first to create the database using a management connection.
 	// If CreateDB creates a new DSN connection, it should return the new DSN.
 	CreateDB(ctx context.Context, uri *dsn.DSN) (*dsn.DSN, error)
-
-	// Connect is called to connect to the actual test database.
-	Connect(ctx context.Context, uri *dsn.DSN) (*sql.DB, error)
 
 	// DropDB is called after Close() to drop the database using a management connection.
 	DropDB(ctx context.Context, uri *dsn.DSN) error

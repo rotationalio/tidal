@@ -16,15 +16,32 @@ type QuerySet struct {
 	Delete   string // Must not contain a WHERE clause.
 }
 
-// TODO: the CRUD struct needs to know the PlaceholderType to use for the query.
 type CRUD[M Model] struct {
 	Queries QuerySet
-	// params  map[Operation]Params // TODO: unused for now
-	fields map[Operation][]string
+	fields  map[Operation][]string
+	params  map[Operation][]string
 }
 
 func New[M Model](table string) *CRUD[M] {
-	c := &CRUD[M]{}
+	c := &CRUD[M]{
+		fields: make(map[Operation][]string),
+		params: make(map[Operation][]string),
+	}
+
+	// Precompute the parameters for the all operations that have parameters.
+	for _, op := range []Operation{List, Create, Retrieve, Update, Delete} {
+		m := Make[M]()
+		ps := m.Params(op)
+		if len(ps) == 0 {
+			continue
+		}
+		names := make([]string, len(ps))
+		for i, p := range ps {
+			names[i] = p.Name
+		}
+		c.params[op] = names
+	}
+
 	c.Queries = QuerySet{
 		List:     c.ListQuery(table),
 		Create:   c.CreateQuery(table),
@@ -36,7 +53,6 @@ func New[M Model](table string) *CRUD[M] {
 }
 
 func (c *CRUD[M]) List(tx Tx, filter ListFilter) (_ Cursor[M], err error) {
-	// Add the filtering constraints to the query (if any).
 	var params []sql.NamedArg
 	query := c.Queries.List
 
@@ -51,7 +67,6 @@ func (c *CRUD[M]) List(tx Tx, filter ListFilter) (_ Cursor[M], err error) {
 	if rows, err = tx.Query(query, params...); err != nil {
 		return nil, err
 	}
-
 	return Rows[M](tx, rows), nil
 }
 
@@ -59,18 +74,12 @@ func (c *CRUD[M]) Create(tx Tx, m M) (result sql.Result, err error) {
 	if prepare, ok := any(m).(Preparer); ok {
 		prepare.Prepare(Create)
 	}
-
 	if validator, ok := any(m).(Validator); ok {
 		if err = validator.Validate(Create); err != nil {
 			return nil, err
 		}
 	}
-
-	if result, err = tx.Exec(c.Queries.Create, m.Params(Create)...); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return tx.Exec(c.Queries.Create, m.Params(Create)...)
 }
 
 func (c *CRUD[M]) Retrieve(tx Tx, id sql.NamedArg) (m M, err error) {
@@ -86,18 +95,15 @@ func (c *CRUD[M]) Update(tx Tx, m M) (err error) {
 	if prepare, ok := any(m).(Preparer); ok {
 		prepare.Prepare(Update)
 	}
-
 	if validator, ok := any(m).(Validator); ok {
 		if err = validator.Validate(Update); err != nil {
 			return err
 		}
 	}
-
 	var result sql.Result
 	if result, err = tx.Exec(c.Queries.Update, m.Params(Update)...); err != nil {
 		return err
 	}
-
 	if nRows, _ := result.RowsAffected(); nRows == 0 {
 		return ErrNotFound
 	}
@@ -106,15 +112,12 @@ func (c *CRUD[M]) Update(tx Tx, m M) (err error) {
 
 func (c *CRUD[M]) Delete(tx Tx, id sql.NamedArg) (result sql.Result, err error) {
 	query := c.Queries.Delete + id.Name + " = :" + id.Name
-	if result, err = tx.Exec(query, id); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return tx.Exec(query, id)
 }
 
 func (c *CRUD[M]) Fields(op Operation) (fields []string) {
-	var ok bool
-	if fields, ok = c.fields[op]; !ok {
+	fields, ok := c.fields[op]
+	if !ok {
 		m := Make[M]()
 		fields = m.Fields(op)
 		c.fields[op] = fields
@@ -122,19 +125,22 @@ func (c *CRUD[M]) Fields(op Operation) (fields []string) {
 	return fields
 }
 
-// TODO: cache so that we don't have to create a new model and params for every call.
 func (c *CRUD[M]) Params(op Operation) (fields []string, placeholders []string) {
-	m := Make[M]()
-	params := m.Params(op)
-
-	fields = make([]string, len(params))
-	placeholders = make([]string, len(params))
-
-	for i, param := range params {
-		fields[i] = param.Name
-		placeholders[i] = ":" + param.Name
+	names, ok := c.params[op]
+	if !ok {
+		m := Make[M]()
+		ps := m.Params(op)
+		names = make([]string, len(ps))
+		for i, p := range ps {
+			names[i] = p.Name
+		}
+		c.params[op] = names
 	}
-	return fields, placeholders
+	placeholders = make([]string, len(names))
+	for i, name := range names {
+		placeholders[i] = ":" + name
+	}
+	return names, placeholders
 }
 
 func (c *CRUD[M]) ListQuery(table string) string {
@@ -153,14 +159,12 @@ func (c *CRUD[M]) RetrieveQuery(table string) string {
 func (c *CRUD[M]) UpdateQuery(table string, fieldID string) string {
 	fields, placeholders := c.Params(Update)
 	setters := make([]string, 0, len(fields))
-
 	for i, field := range fields {
 		if field == fieldID {
 			continue
 		}
 		setters = append(setters, fmt.Sprintf("%s=%s", field, placeholders[i]))
 	}
-
 	return fmt.Sprintf("UPDATE %s SET %s WHERE %s=:%s", table, strings.Join(setters, ", "), fieldID, fieldID)
 }
 
