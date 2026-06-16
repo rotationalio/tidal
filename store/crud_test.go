@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"go.rtnl.ai/tidal"
+	"go.rtnl.ai/tidal/store"
 	"go.rtnl.ai/tidal/suite/fixtures"
 	"go.rtnl.ai/ulid"
 )
@@ -93,7 +94,7 @@ func (s *StoreTestSuite) TestCursorCloseRollsBackTx() {
 	rows, err := tx.Query("SELECT " + joinFields(user.Fields(tidal.List)) + " FROM users LIMIT 1")
 	require.NoError(err)
 
-	cursor := tidal.Rows[*fixtures.User](tx, rows)
+	cursor := store.Rows[*fixtures.User](tx, rows)
 	require.NoError(cursor.Close())
 
 	_, err = tx.Exec("SELECT 1")
@@ -110,7 +111,7 @@ func (s *StoreTestSuite) TestCursorCloseRowsDoesNotRollBackTx() {
 	rows, err := tx.Query("SELECT " + joinFields(user.Fields(tidal.List)) + " FROM users LIMIT 1")
 	require.NoError(err)
 
-	cursor := tidal.Rows[*fixtures.User](tx, rows)
+	cursor := store.Rows[*fixtures.User](tx, rows)
 	require.NoError(cursor.CloseRows())
 
 	_, err = tx.Exec("SELECT 1")

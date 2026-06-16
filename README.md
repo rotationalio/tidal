@@ -77,7 +77,7 @@ _, err = tx.Exec(
 )
 ```
 
-Pass `tidal.Tx` to [`CRUD`](https://pkg.go.dev/go.rtnl.ai/tidal#CRUD) methods and [`Rows`](https://pkg.go.dev/go.rtnl.ai/tidal#Rows) cursors.
+Pass `tidal.Tx` to [`CRUD`](https://pkg.go.dev/go.rtnl.ai/tidal#CRUD) methods and [`Cursor`](https://pkg.go.dev/go.rtnl.ai/tidal#Cursor) results.
 
 When you need a raw `*sql.DB` — for migrations, third-party libraries, or admin DDL — use the embedded connection (`db.DB`) or [`DB.SQLDB`](https://pkg.go.dev/go.rtnl.ai/tidal#DB.SQLDB).
 
@@ -113,12 +113,32 @@ cursor, err := crud.List(tx, (&tidal.Filter{}).OrderBy("name").Limit(10))
 users, err := cursor.List()
 ```
 
-Use [`CustomFilter`](https://pkg.go.dev/go.rtnl.ai/tidal#CustomFilter) for `WHERE` conditions. [`Filter`](https://pkg.go.dev/go.rtnl.ai/tidal#Filter) adds `ORDER BY`, `LIMIT`, and `OFFSET` — combine both when you need filtering and pagination:
+[`Filter`](https://pkg.go.dev/go.rtnl.ai/tidal#Filter) builds `WHERE`, `ORDER BY`, `LIMIT`, and `OFFSET` clauses. Calling `Where` replaces any previous WHERE clause (like `OrderBy`, `Limit`, and `Offset`). `And`, `Or`, `AndGroup`, and `OrGroup` append to the current WHERE clause:
 
 ```go
-f := (&tidal.Filter{}).OrderBy("-created").Limit(20)
+// Where replaces any previous WHERE clause.
+f := (&tidal.Filter{}).
+ Where("status", tidal.Eq, "active").
+ Where("role", tidal.Eq, "admin") // only role = :w1 remains
+
+// And/Or/AndGroup/OrGroup append to the current WHERE clause.
+f = (&tidal.Filter{}).
+ Where("status", tidal.Eq, "active").
+ And("age", tidal.Gte, 18).
+ AndGroup(func(g *tidal.Where) {
+  g.Where("role", tidal.Eq, "admin").Or("role", tidal.Eq, "editor")
+ }).
+ OrderBy("-created").
+ Limit(20)
+
+cursor, err := crud.List(tx, f)
+```
+
+Use [`CustomFilter`](https://pkg.go.dev/go.rtnl.ai/tidal#CustomFilter) for hand-written SQL when you need clauses `Filter` does not build (for example `GROUP BY`):
+
+```go
 filter := &tidal.CustomFilter{
- SQL:  "WHERE status = :status " + f.Clause(),
+ SQL:  "WHERE status = :status GROUP BY name",
  Args: []sql.NamedArg{sql.Named("status", "active")},
 }
 cursor, err := crud.List(tx, filter)
@@ -170,7 +190,7 @@ func Migrations() (migrations.Migrations, error) {
 
 Call `Apply` (or `ApplyPostgres` / `ApplySQLite` directly) after connecting with `tidal.Open`. These methods create the `migrations` bookkeeping table if it does not exist, look up the last applied migration ID, and apply only migrations with a higher ID. The `version` string you pass is recorded alongside each migration so you can tell which release applied a given schema change.
 
-`Apply` and `LastApplied` accept any value that implements [`tidal.Beginner`](https://pkg.go.dev/go.rtnl.ai/tidal#Beginner) — typically your `*tidal.DB` from `tidal.Open`:
+`Apply` and `LastApplied` accept any value that implements [`conn.Beginner`](https://pkg.go.dev/go.rtnl.ai/tidal/conn#Beginner) — typically your `*tidal.DB` from `tidal.Open`:
 
 ```go
 ctx := context.Background()

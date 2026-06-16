@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"go.rtnl.ai/tidal"
+	"go.rtnl.ai/tidal/store"
 	"go.rtnl.ai/tidal/suite/fixtures"
 )
 
@@ -22,7 +23,7 @@ func (s *StoreTestSuite) TestCursor() {
 	rows, err := tx.Query(fmt.Sprintf("SELECT %s FROM users", fields))
 	require.NoError(err)
 
-	cursor := tidal.Rows[*fixtures.User](tx, rows)
+	cursor := store.Rows[*fixtures.User](tx, rows)
 	models, err := cursor.List()
 	require.NoError(err)
 	require.Len(models, 25)
