@@ -88,6 +88,14 @@ func (j JSONB) IsNull() bool {
 	return len(j) == 0 || bytes.Equal(j, JSONNull)
 }
 
+// Equal compares JSON values after normalization so key order differences do not matter.
+func (j JSONB) Equal(other JSONB) bool {
+	if j.IsNull() && other.IsNull() {
+		return true
+	}
+	return bytes.Equal(j.Normalize(), other.Normalize())
+}
+
 // UnmarshalTo decodes the JSON into dst. A nil or empty value is a no-op.
 func (j JSONB) UnmarshalTo(dst any) error {
 	if len(j) == 0 {
@@ -163,4 +171,19 @@ func (j *NullJSONB) MarshalFrom(src any) (err error) {
 	}
 
 	return nil
+}
+
+// Equal compares nullable JSON values with SQL NULL normalization.
+func (j NullJSONB) Equal(other NullJSONB) bool {
+	if j.JSONB.IsNull() {
+		j.Valid = false
+	}
+	if other.JSONB.IsNull() {
+		other.Valid = false
+	}
+
+	if j.Valid != other.Valid {
+		return false
+	}
+	return j.JSONB.Equal(other.JSONB)
 }

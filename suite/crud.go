@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.rtnl.ai/tidal"
+	"go.rtnl.ai/tidal/fields"
 	"go.rtnl.ai/ulid"
 	"go.rtnl.ai/x/typecase"
 )
@@ -238,7 +239,7 @@ func testCRUDRoundTrip[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M], 
 	require.Len(models, 1, "List should return exactly one model")
 
 	// Compare only List columns (not full struct — List Scan omits password, etc.).
-	require.True(equalListFields(s.T(), created, models[0], created.Fields(tidal.List)), "List returned unexpected model")
+	require.True(equalListFields(s.T(), created, models[0], created.Fields(tidal.List), cfg.Equal), "List returned unexpected model")
 
 	// --- UPDATE ---
 	// Caller mutates the same in-memory instance; CRUD Update runs Prepare/Validate
@@ -316,8 +317,12 @@ func defaultEqual[M tidal.Model](tb testing.TB, a, b M) bool {
 // Compares two models on the subset of columns returned by Fields(List). List
 // Scan does not populate password, dob, etc., so we must not use full struct
 // Equal.
-func equalListFields[M tidal.Model](tb testing.TB, a, b M, columns []string) bool {
+func equalListFields[M tidal.Model](tb testing.TB, a, b M, columns []string, equal func(a, b M) bool) bool {
 	tb.Helper()
+	if equal != nil {
+		return equal(a, b)
+	}
+
 	av := reflect.ValueOf(a)
 	bv := reflect.ValueOf(b)
 
@@ -363,6 +368,20 @@ func equalValues(tb testing.TB, a, b reflect.Value) bool {
 
 	if a.Type() != b.Type() {
 		return false
+	}
+
+	// Custom field wrappers that need DB round-trip normalization.
+	if a.Type() == reflect.TypeOf(fields.StringArray{}) {
+		return a.Interface().(fields.StringArray).Equal(b.Interface().(fields.StringArray))
+	}
+	if a.Type() == reflect.TypeOf(fields.NullStringArray{}) {
+		return a.Interface().(fields.NullStringArray).Equal(b.Interface().(fields.NullStringArray))
+	}
+	if a.Type() == reflect.TypeOf(fields.JSONB{}) {
+		return a.Interface().(fields.JSONB).Equal(b.Interface().(fields.JSONB))
+	}
+	if a.Type() == reflect.TypeOf(fields.NullJSONB{}) {
+		return a.Interface().(fields.NullJSONB).Equal(b.Interface().(fields.NullJSONB))
 	}
 
 	switch a.Kind() {

@@ -20,6 +20,7 @@ var (
 	deltaBytes   = []byte(`{"e":5,"f":6}`)
 )
 
+// Verifies JSONB.Normalize canonicalizes key ordering for valid JSON inputs.
 func TestJSONB_Normalize(t *testing.T) {
 	t.Run("StableKeyOrder", func(t *testing.T) {
 		alpha := []byte(`{"a":1,"b":2}`)
@@ -38,6 +39,45 @@ func TestJSONB_Normalize(t *testing.T) {
 	})
 }
 
+// Verifies JSONB.Equal compares semantic JSON and normalizes null-like values.
+func TestJSONBEqual(t *testing.T) {
+	t.Run("EquivalentObjects", func(t *testing.T) {
+		// Key order should not affect equality for valid JSON values.
+		require.True(t, JSONB(alphaBytes).Equal(JSONB(bravoBytes)))
+	})
+
+	t.Run("NullNormalization", func(t *testing.T) {
+		// SQL NULL and JSON null should compare equal for conformance checks.
+		require.True(t, JSONB(nil).Equal(JSONB(JSONNull)))
+	})
+
+	t.Run("DifferentValues", func(t *testing.T) {
+		require.False(t, JSONB(alphaBytes).Equal(JSONB(charlieBytes)))
+	})
+}
+
+// Verifies NullJSONB.Equal applies Valid/null normalization and JSON semantics.
+func TestNullJSONBEqual(t *testing.T) {
+	t.Run("EquivalentValues", func(t *testing.T) {
+		a := NullJSONB{Valid: true, JSONB: JSONB(alphaBytes)}
+		b := NullJSONB{Valid: true, JSONB: JSONB(bravoBytes)}
+		require.True(t, a.Equal(b))
+	})
+
+	t.Run("NullNormalization", func(t *testing.T) {
+		a := NullJSONB{Valid: false, JSONB: nil}
+		b := NullJSONB{Valid: true, JSONB: JSONB(JSONNull)}
+		require.True(t, a.Equal(b))
+	})
+
+	t.Run("DifferentValues", func(t *testing.T) {
+		a := NullJSONB{Valid: true, JSONB: JSONB(alphaBytes)}
+		b := NullJSONB{Valid: true, JSONB: JSONB(deltaBytes)}
+		require.False(t, a.Equal(b))
+	})
+}
+
+// Verifies JSONB database round-trip behavior on SQLite.
 func (s *FieldsSqliteTestSuite) TestJSONB() {
 	s.Run("HappyPath", func() {
 		require := s.Require()
@@ -114,6 +154,7 @@ func (s *FieldsSqliteTestSuite) TestJSONB() {
 	})
 }
 
+// Verifies JSONB database round-trip behavior on Postgres.
 func (s *FieldsPostgresTestSuite) TestJSONB() {
 	s.Run("HappyPath", func() {
 		require := s.Require()
@@ -195,6 +236,7 @@ func (s *FieldsPostgresTestSuite) TestJSONB() {
 	})
 }
 
+// Verifies JSONB.IsNull behavior for null-like and non-null values.
 func TestJSONB_IsNull(t *testing.T) {
 	t.Run("Null", func(t *testing.T) {
 		require.True(t, JSONB(nil).IsNull(), "expected nil input to be null")
@@ -213,6 +255,7 @@ func TestJSONB_IsNull(t *testing.T) {
 	})
 }
 
+// Verifies JSONB.UnmarshalTo behavior for nil, valid, and invalid values.
 func TestJSONB_UnmarshalTo(t *testing.T) {
 	t.Run("Nil", func(t *testing.T) {
 		var v map[string]any
@@ -240,6 +283,7 @@ func TestJSONB_UnmarshalTo(t *testing.T) {
 	})
 }
 
+// Verifies JSONB.MarshalFrom behavior for nil, valid, and invalid source values.
 func TestJSONB_MarshalFrom(t *testing.T) {
 	t.Run("Nil", func(t *testing.T) {
 		b := JSONB{}
@@ -264,6 +308,7 @@ func TestJSONB_MarshalFrom(t *testing.T) {
 // NullJSONB Tests
 //============================================================================
 
+// Verifies NullJSONB database round-trip behavior on SQLite.
 func (s *FieldsSqliteTestSuite) TestNullJSONB() {
 	s.Run("HappyPath", func() {
 		require := s.Require()
@@ -313,6 +358,7 @@ func (s *FieldsSqliteTestSuite) TestNullJSONB() {
 	})
 }
 
+// Verifies NullJSONB database round-trip behavior on Postgres.
 func (s *FieldsPostgresTestSuite) TestNullJSONB() {
 	s.Run("HappyPath", func() {
 		require := s.Require()
@@ -371,6 +417,7 @@ func (s *FieldsPostgresTestSuite) TestNullJSONB() {
 	})
 }
 
+// Verifies NullJSONB.UnmarshalTo behavior for null, valid, and invalid values.
 func TestNullJSONB_UnmarshalTo(t *testing.T) {
 	t.Run("Nil", func(t *testing.T) {
 		var v map[string]int
@@ -400,6 +447,7 @@ func TestNullJSONB_UnmarshalTo(t *testing.T) {
 	})
 }
 
+// Verifies NullJSONB.MarshalFrom behavior for nil, null, valid, and error paths.
 func TestNullJSONB_MarshalFrom(t *testing.T) {
 	t.Run("Nil", func(t *testing.T) {
 		b := NullJSONB{}
@@ -433,6 +481,7 @@ func TestNullJSONB_MarshalFrom(t *testing.T) {
 
 type NullJSON struct{}
 
+// MarshalJSON emits a JSON null literal for MarshalFrom null-path tests.
 func (n NullJSON) MarshalJSON() ([]byte, error) {
 	return []byte("null"), nil
 }

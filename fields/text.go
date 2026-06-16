@@ -4,6 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"slices"
 )
 
 // StringArray stores a list of strings as a JSON array in a NOT NULL column.
@@ -50,6 +51,23 @@ func (s StringArray) Value() (driver.Value, error) {
 	return json.Marshal(s)
 }
 
+// Equal compares two arrays, treating nil and empty arrays as equivalent.
+func (s StringArray) Equal(other StringArray) bool {
+	if len(s) == 0 && len(other) == 0 {
+		return true
+	}
+	if len(s) != len(other) {
+		return false
+	}
+
+	// Compare as multisets so element order does not affect equality.
+	a := slices.Clone([]string(s))
+	b := slices.Clone([]string(other))
+	slices.Sort(a)
+	slices.Sort(b)
+	return slices.Equal(a, b)
+}
+
 //============================================================================
 // NullStringArray Methods
 //============================================================================
@@ -76,4 +94,19 @@ func (n NullStringArray) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return n.StringArray.Value()
+}
+
+// Equal compares nullable arrays, normalizing empty arrays to SQL NULL semantics.
+func (n NullStringArray) Equal(other NullStringArray) bool {
+	if len(n.StringArray) == 0 {
+		n.Valid = false
+	}
+	if len(other.StringArray) == 0 {
+		other.Valid = false
+	}
+
+	if n.Valid != other.Valid {
+		return false
+	}
+	return n.StringArray.Equal(other.StringArray)
 }

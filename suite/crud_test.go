@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/tidal"
+	"go.rtnl.ai/tidal/fields"
 	"go.rtnl.ai/ulid"
 )
 
@@ -125,8 +126,83 @@ func TestEqualListFields(t *testing.T) {
 		UserID:    other,
 	}
 
-	require.True(t, equalListFields(t, a, b, a.Fields(tidal.List)))
-	require.False(t, equalListFields(t, a, &scanHelperModel{URLPath: "/b", UserID: other}, a.Fields(tidal.List)))
+	require.True(t, equalListFields(t, a, b, a.Fields(tidal.List), nil))
+	require.False(t, equalListFields(t, a, &scanHelperModel{URLPath: "/b", UserID: other}, a.Fields(tidal.List), nil))
+}
+
+// Verifies list-field comparisons delegate to cfg.Equal when provided.
+func TestEqualListFieldsUsesCustomEqual(t *testing.T) {
+	uid := ulid.MustParse("01KTESYNDPVTRWK05N2TXFKGQZ")
+	other := ulid.MustParse("01KTESYNDPVTRWK05N2TXFKGQ0")
+
+	a := &scanHelperModel{
+		BaseModel: tidal.BaseModel{ID: uid},
+		URLPath:   "/a",
+		UserID:    other,
+	}
+	b := &scanHelperModel{
+		BaseModel: tidal.BaseModel{ID: uid},
+		URLPath:   "/different",
+		UserID:    other,
+	}
+
+	called := false
+	customEqual := func(x, y *scanHelperModel) bool {
+		called = true
+		return true
+	}
+
+	require.True(t, equalListFields(t, a, b, a.Fields(tidal.List), customEqual))
+	require.True(t, called, "custom equal should be used for list comparisons")
+}
+
+// Verifies equalValues uses field-type Equal semantics for array and JSON wrappers.
+func TestEqualValuesStringArrays(t *testing.T) {
+	t.Run("StringArrayNilAndEmptyEqual", func(t *testing.T) {
+		a := fields.StringArray(nil)
+		b := fields.StringArray{}
+		require.True(t, equalValues(t, reflect.ValueOf(a), reflect.ValueOf(b)))
+	})
+
+	t.Run("StringArrayElementWise", func(t *testing.T) {
+		a := fields.StringArray{"a", "b"}
+		b := fields.StringArray{"a", "b"}
+		c := fields.StringArray{"a", "c"}
+		require.True(t, equalValues(t, reflect.ValueOf(a), reflect.ValueOf(b)))
+		require.False(t, equalValues(t, reflect.ValueOf(a), reflect.ValueOf(c)))
+	})
+
+	t.Run("NullStringArrayNilAndEmptyEqual", func(t *testing.T) {
+		a := fields.NullStringArray{Valid: false, StringArray: nil}
+		b := fields.NullStringArray{Valid: false, StringArray: fields.StringArray{}}
+		c := fields.NullStringArray{Valid: true, StringArray: fields.StringArray{}}
+		require.True(t, equalValues(t, reflect.ValueOf(a), reflect.ValueOf(b)))
+		require.True(t, equalValues(t, reflect.ValueOf(a), reflect.ValueOf(c)))
+	})
+
+	t.Run("NullStringArrayElementWise", func(t *testing.T) {
+		a := fields.NullStringArray{Valid: true, StringArray: fields.StringArray{"x", "y"}}
+		b := fields.NullStringArray{Valid: true, StringArray: fields.StringArray{"x", "y"}}
+		c := fields.NullStringArray{Valid: true, StringArray: fields.StringArray{"x", "z"}}
+		require.True(t, equalValues(t, reflect.ValueOf(a), reflect.ValueOf(b)))
+		require.False(t, equalValues(t, reflect.ValueOf(a), reflect.ValueOf(c)))
+	})
+
+	t.Run("JSONBSemanticEquality", func(t *testing.T) {
+		a := fields.JSONB([]byte(`{"a":1,"b":2}`))
+		b := fields.JSONB([]byte(`{"b":2,"a":1}`))
+		c := fields.JSONB([]byte(`{"a":1,"b":3}`))
+		require.True(t, equalValues(t, reflect.ValueOf(a), reflect.ValueOf(b)))
+		require.False(t, equalValues(t, reflect.ValueOf(a), reflect.ValueOf(c)))
+	})
+
+	t.Run("NullJSONBNullNormalization", func(t *testing.T) {
+		a := fields.NullJSONB{Valid: false, JSONB: nil}
+		b := fields.NullJSONB{Valid: true, JSONB: fields.JSONB([]byte("null"))}
+		c := fields.NullJSONB{Valid: true, JSONB: fields.JSONB([]byte(`{"x":1}`))}
+		require.True(t, equalValues(t, reflect.ValueOf(a), reflect.ValueOf(b)))
+		require.False(t, equalValues(t, reflect.ValueOf(a), reflect.ValueOf(c)))
+	})
 }
 
 //============================================================================
@@ -173,10 +249,12 @@ type fatalCapture struct {
 	msg string
 }
 
+// Fatal captures fatal messages without stopping the test process.
 func (f *fatalCapture) Fatal(args ...any) {
 	f.msg = fmt.Sprint(args...)
 }
 
+// Fatalf captures formatted fatal messages without stopping the test process.
 func (f *fatalCapture) Fatalf(format string, args ...any) {
 	f.msg = fmt.Sprintf(format, args...)
 }
@@ -196,6 +274,7 @@ type scanHelperModel struct {
 
 var _ tidal.Model = (*scanHelperModel)(nil)
 
+// Fields defines operation-specific column order used by conformance helpers.
 func (m *scanHelperModel) Fields(op tidal.Operation) []string {
 	switch op {
 	case tidal.List:
@@ -207,6 +286,7 @@ func (m *scanHelperModel) Fields(op tidal.Operation) []string {
 	}
 }
 
+// Params returns operation-specific bind parameters used by conformance helpers.
 func (m *scanHelperModel) Params(op tidal.Operation) []sql.NamedArg {
 	switch op {
 	case tidal.Update:
@@ -227,6 +307,7 @@ func (m *scanHelperModel) Params(op tidal.Operation) []sql.NamedArg {
 	}
 }
 
+// Scan maps row values into the helper model for each operation shape.
 func (m *scanHelperModel) Scan(op tidal.Operation, s tidal.Scanner) error {
 	switch op {
 	case tidal.List:
@@ -241,10 +322,15 @@ func (m *scanHelperModel) Scan(op tidal.Operation, s tidal.Scanner) error {
 // noIDModel has no id in Params(Create) — used to test [modelID] failure path.
 type noIDModel struct{}
 
+// Fields returns a minimal shape for noIDModel tests.
 func (noIDModel) Fields(tidal.Operation) []string { return []string{"id"} }
+
+// Params intentionally omits id to trigger modelID failure assertions.
 func (noIDModel) Params(tidal.Operation) []sql.NamedArg {
 	return []sql.NamedArg{sql.Named("name", "x")}
 }
+
+// Scan is unused in these helper tests.
 func (noIDModel) Scan(tidal.Operation, tidal.Scanner) error { return nil }
 
 // brokenScanModel declares a Fields column with no Params value — used to test
@@ -253,8 +339,13 @@ type brokenScanModel struct {
 	tidal.BaseModel
 }
 
+// Fields includes a column missing from Params to exercise failure paths.
 func (brokenScanModel) Fields(tidal.Operation) []string { return []string{"id", "missing_col"} }
+
+// Params intentionally omits missing_col to trigger valuesForScan failure.
 func (brokenScanModel) Params(tidal.Operation) []sql.NamedArg {
 	return []sql.NamedArg{sql.Named("id", ulid.ULID{})}
 }
+
+// Scan is unused in these helper tests.
 func (brokenScanModel) Scan(tidal.Operation, tidal.Scanner) error { return nil }
