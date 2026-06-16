@@ -54,6 +54,7 @@ import (
 	"go.rtnl.ai/tidal/bind"
 	"go.rtnl.ai/tidal/conn"
 	"go.rtnl.ai/tidal/filter"
+	"go.rtnl.ai/tidal/filter/builder"
 	"go.rtnl.ai/tidal/model"
 	"go.rtnl.ai/tidal/store"
 )
@@ -131,18 +132,22 @@ var (
 
 type (
 	ListFilter     = filter.ListFilter
-	Clause         = filter.Clause
+	CustomFilter   = filter.CustomFilter
 	Filter         = filter.Filter
-	Ordering       = filter.Ordering
-	OrderBy        = filter.OrderBy
-	OrderDirection = filter.OrderDirection
-	Limit          = filter.Limit
-	Offset         = filter.Offset
+	Ordering       = builder.Ordering
+	OrderBy        = builder.OrderBy
+	OrderDirection = builder.OrderDirection
+	Limit          = builder.Limit
+	Offset         = builder.Offset
+
+	// Alias for [CustomFilter] for backwards compatibility; use [CustomFilter]
+	// instead.
+	Clause = CustomFilter
 )
 
 const (
-	OrderASC  = filter.OrderASC
-	OrderDESC = filter.OrderDESC
+	OrderASC  = builder.OrderASC
+	OrderDESC = builder.OrderDESC
 )
 
 // Store

@@ -17,7 +17,7 @@ Import [`go.rtnl.ai/tidal`](https://pkg.go.dev/go.rtnl.ai/tidal) in application 
 | [`go.rtnl.ai/tidal`](https://pkg.go.dev/go.rtnl.ai/tidal) | Main entry point — re-exports connections, models, filters, and CRUD |
 | [`go.rtnl.ai/tidal/conn`](https://pkg.go.dev/go.rtnl.ai/tidal/conn) | `DB`, `Tx`, `Open`, `Wrap`, [`Beginner`](https://pkg.go.dev/go.rtnl.ai/tidal/conn#Beginner) |
 | [`go.rtnl.ai/tidal/model`](https://pkg.go.dev/go.rtnl.ai/tidal/model) | `Model`, `BaseModel`, `Operation` |
-| [`go.rtnl.ai/tidal/filter`](https://pkg.go.dev/go.rtnl.ai/tidal/filter) | `Filter`, `Clause`, list-query pagination |
+| [`go.rtnl.ai/tidal/filter`](https://pkg.go.dev/go.rtnl.ai/tidal/filter) | `Filter`, `CustomFilter`, list-query pagination |
 | [`go.rtnl.ai/tidal/store`](https://pkg.go.dev/go.rtnl.ai/tidal/store) | `CRUD`, `Cursor`, query generation |
 | [`go.rtnl.ai/tidal/bind`](https://pkg.go.dev/go.rtnl.ai/tidal/bind) | `:name` placeholder rewriting |
 | [`go.rtnl.ai/tidal/migrations`](https://pkg.go.dev/go.rtnl.ai/tidal/migrations) | Versioned SQL schema migrations |
@@ -113,11 +113,11 @@ cursor, err := crud.List(tx, (&tidal.Filter{}).OrderBy("name").Limit(10))
 users, err := cursor.List()
 ```
 
-Use [`Clause`](https://pkg.go.dev/go.rtnl.ai/tidal#Clause) for `WHERE` conditions. [`Filter`](https://pkg.go.dev/go.rtnl.ai/tidal#Filter) adds `ORDER BY`, `LIMIT`, and `OFFSET` — combine both when you need filtering and pagination:
+Use [`CustomFilter`](https://pkg.go.dev/go.rtnl.ai/tidal#CustomFilter) for `WHERE` conditions. [`Filter`](https://pkg.go.dev/go.rtnl.ai/tidal#Filter) adds `ORDER BY`, `LIMIT`, and `OFFSET` — combine both when you need filtering and pagination:
 
 ```go
 f := (&tidal.Filter{}).OrderBy("-created").Limit(20)
-filter := &tidal.Clause{
+filter := &tidal.CustomFilter{
  SQL:  "WHERE status = :status " + f.Clause(),
  Args: []sql.NamedArg{sql.Named("status", "active")},
 }

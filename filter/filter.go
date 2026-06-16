@@ -1,9 +1,9 @@
 // Package filter builds list-query clauses for sorting and pagination.
 //
-// Use [Filter] for ORDER BY, LIMIT, and OFFSET. Combine with [Clause] for WHERE
+// Use [Filter] for ORDER BY, LIMIT, and OFFSET. Combine with [CustomFilter] for WHERE
 // conditions.
 //
-// Example:
+// Building a composable [Filter] and integrating with a custom [Clause]:
 //
 //	f := (&filter.Filter{}).OrderBy("-created").Limit(20)
 //	listFilter := &filter.Clause{
@@ -15,9 +15,14 @@ package filter
 
 import (
 	"database/sql"
-	"fmt"
 	"strings"
+
+	"go.rtnl.ai/tidal/filter/builder"
 )
+
+//============================================================================
+// ListFilter Interface
+//============================================================================
 
 // ListFilters are an interface that allows for the construction of complex queries
 // for listing models that include filtering, sorting, limiting and pagination.
@@ -30,33 +35,27 @@ type ListFilter interface {
 	Params() []sql.NamedArg
 }
 
-// Clause is a manual filtering mechanism that implements the ListFilter interface, but
-// requires the user to manually construct the SQL clause and parameters.
-type Clause struct {
-	SQL  string
-	Args []sql.NamedArg
-}
+//============================================================================
+// Filter Implementation
+//============================================================================
 
-func (c *Clause) Clause() string {
-	return c.SQL
-}
-
-func (c *Clause) Params() []sql.NamedArg {
-	return c.Args
-}
-
-// Simple Filter that implements the ListFilter interface. This filter does not perform
-// any constraint or database-specific checks before returning the SQL clause, so may
-// not be suitable for all database backends. It ensures that an ANSI SQL clause is
-// returned and that the parameters in the query are in the correct order.
+// Implements the [ListFilter] interface. This filter does not perform any
+// constraint or database-specific checks before returning the SQL clause, so
+// may not be suitable for all database backends. It ensures that an ANSI SQL
+// clause is returned and that the parameters in the query are in the correct
+// order and named.
 //
 // TODO: Handle WHERE clauses.
 type Filter struct {
-	limit    *Limit
-	offset   *Offset
-	ordering Ordering
+	limit    *builder.Limit
+	offset   *builder.Offset
+	ordering builder.Ordering
 	params   []sql.NamedArg
 }
+
+//============================================================================
+// Filter Building Methods
+//============================================================================
 
 // Pass in the column names to order by. To clear the ordering pass in an empty slice.
 // Note that the ordering is overwritten if this method is called multiple times.
@@ -69,11 +68,11 @@ func (f *Filter) OrderBy(columns ...string) *Filter {
 	f.ordering = nil
 	if len(columns) > 0 {
 		for _, column := range columns {
+			direction := builder.OrderASC
 			if strings.HasPrefix(column, "-") {
-				f.ordering = append(f.ordering, OrderBy{field: strings.TrimPrefix(column, "-"), direction: OrderDESC})
-			} else {
-				f.ordering = append(f.ordering, OrderBy{field: column, direction: OrderASC})
+				direction = builder.OrderDESC
 			}
+			f.ordering = append(f.ordering, builder.OrderBy{Column: strings.TrimPrefix(column, "-"), Direction: direction})
 		}
 	}
 	return f
@@ -85,7 +84,7 @@ func (f *Filter) Limit(n int) *Filter {
 	if n < 0 {
 		f.limit = nil
 	} else {
-		l := Limit(n)
+		l := builder.Limit(n)
 		f.limit = &l
 	}
 	return f
@@ -97,12 +96,17 @@ func (f *Filter) Offset(n int) *Filter {
 	if n < 0 {
 		f.offset = nil
 	} else {
-		o := Offset(n)
+		o := builder.Offset(n)
 		f.offset = &o
 	}
 	return f
 }
 
+//============================================================================
+// FilterList Implementation for Filter
+//============================================================================
+
+// Returns the SQL clause string for the filter.
 func (f *Filter) Clause() string {
 	sb := strings.Builder{}
 	concat := false
@@ -133,81 +137,12 @@ func (f *Filter) Clause() string {
 		sb.WriteString(f.offset.String())
 	}
 
+	// TODO: cache the SQL clause string; reset the cache when the filter is modified
+
 	return sb.String()
 }
 
+// Returns the parameters for the filter clause.
 func (f *Filter) Params() []sql.NamedArg {
 	return f.params
-}
-
-//============================================================================
-// Ordering
-//============================================================================
-
-// Ordering is a list of sort columns rendered as an ORDER BY clause.
-type Ordering []OrderBy
-
-func (o Ordering) String() string {
-	sb := strings.Builder{}
-	sb.WriteString("ORDER BY ")
-	for i, order := range o {
-		sb.WriteString(order.String())
-		if i < len(o)-1 {
-			sb.WriteString(", ")
-		}
-	}
-	return sb.String()
-}
-
-// OrderBy is one column and sort direction in an [Ordering].
-type OrderBy struct {
-	field     string
-	direction OrderDirection
-}
-
-func (o OrderBy) String() string {
-	return fmt.Sprintf("%s %s", o.field, o.direction)
-}
-
-// OrderDirection is ASC or DESC in an [OrderBy].
-type OrderDirection uint8
-
-const (
-	OrderASC OrderDirection = iota
-	OrderDESC
-)
-
-func (o OrderDirection) String() string {
-	switch o {
-	case OrderASC:
-		return "ASC"
-	case OrderDESC:
-		return "DESC"
-	default:
-		return "unknown"
-	}
-}
-
-//============================================================================
-// Limit and Offset
-//============================================================================
-
-// Limit is a row cap rendered as a LIMIT clause.
-type Limit int
-
-// Offset is a row skip rendered as an OFFSET clause.
-type Offset int
-
-func (s Limit) String() string {
-	if s >= 0 {
-		return fmt.Sprintf("LIMIT %d", s)
-	}
-	return ""
-}
-
-func (s Offset) String() string {
-	if s >= 0 {
-		return fmt.Sprintf("OFFSET %d", s)
-	}
-	return ""
 }
