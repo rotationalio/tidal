@@ -1,10 +1,11 @@
-package tidal_test
+package store_test
 
 import (
 	"database/sql"
 	"fmt"
 
 	"go.rtnl.ai/tidal"
+	"go.rtnl.ai/tidal/suite/fixtures"
 	"go.rtnl.ai/ulid"
 )
 
@@ -13,28 +14,28 @@ import (
 //============================================================================
 
 // Update on a row that does not exist must return [tidal.ErrNotFound], not succeed silently.
-func (s *TidalTestSuite) TestUpdateNotFound() {
+func (s *StoreTestSuite) TestUpdateNotFound() {
 	require := s.Require()
-	crud := tidal.New[*User]("users")
+	crud := tidal.New[*fixtures.User]("users")
 
 	tx := s.BeginTx(nil)
 	defer tx.Rollback()
 
-	user := newConformanceUser()
+	user := fixtures.NewConformanceUser()
 	user.Prepare(tidal.Create) // valid ID, but never inserted
 
 	require.ErrorIs(crud.Update(tx, user), tidal.ErrNotFound)
 }
 
 // Validate fails; zero ID returns [tidal.ErrMissingID].
-func (s *TidalTestSuite) TestUpdateValidation() {
+func (s *StoreTestSuite) TestUpdateValidation() {
 	require := s.Require()
-	crud := tidal.New[*User]("users")
+	crud := tidal.New[*fixtures.User]("users")
 
 	tx := s.BeginTx(nil)
 	defer tx.Rollback()
 
-	user := &User{Name: "validation-only"}
+	user := &fixtures.User{Name: "validation-only"}
 	require.ErrorIs(crud.Update(tx, user), tidal.ErrMissingID)
 }
 
@@ -44,16 +45,16 @@ func (s *TidalTestSuite) TestUpdateValidation() {
 
 // Exercises [tidal.Filter] ORDER BY / LIMIT / OFFSET against a real database.
 // WHERE scoping is supplied via [tidal.Clause] until Filter grows WHERE support.
-func (s *TidalTestSuite) TestListFilter() {
+func (s *StoreTestSuite) TestListFilter() {
 	require := s.Require()
-	crud := tidal.New[*User]("users")
+	crud := tidal.New[*fixtures.User]("users")
 
 	tx := s.BeginTx(nil)
 	defer tx.Rollback()
 
 	names := []string{"filter-aaa", "filter-ccc", "filter-bbb"}
 	for _, name := range names {
-		u := newConformanceUser()
+		u := fixtures.NewConformanceUser()
 		u.Name = name
 		u.Email = fmt.Sprintf("%s-%s@example.com", name, ulid.MakeSecure().String())
 		_, err := crud.Create(tx, u)
@@ -83,16 +84,16 @@ func (s *TidalTestSuite) TestListFilter() {
 //============================================================================
 
 // [tidal.Cursor.Close] rolls back the transaction.
-func (s *TidalTestSuite) TestCursorCloseRollsBackTx() {
+func (s *StoreTestSuite) TestCursorCloseRollsBackTx() {
 	require := s.Require()
 
 	tx := s.BeginTx(nil)
 
-	user := &User{}
+	user := &fixtures.User{}
 	rows, err := tx.Query("SELECT " + joinFields(user.Fields(tidal.List)) + " FROM users LIMIT 1")
 	require.NoError(err)
 
-	cursor := tidal.Rows[*User](tx, rows)
+	cursor := tidal.Rows[*fixtures.User](tx, rows)
 	require.NoError(cursor.Close())
 
 	_, err = tx.Exec("SELECT 1")
@@ -100,16 +101,16 @@ func (s *TidalTestSuite) TestCursorCloseRollsBackTx() {
 }
 
 // [tidal.Cursor.CloseRows] does not roll back the transaction.
-func (s *TidalTestSuite) TestCursorCloseRowsDoesNotRollBackTx() {
+func (s *StoreTestSuite) TestCursorCloseRowsDoesNotRollBackTx() {
 	require := s.Require()
 
 	tx := s.BeginTx(nil)
 
-	user := &User{}
+	user := &fixtures.User{}
 	rows, err := tx.Query("SELECT " + joinFields(user.Fields(tidal.List)) + " FROM users LIMIT 1")
 	require.NoError(err)
 
-	cursor := tidal.Rows[*User](tx, rows)
+	cursor := tidal.Rows[*fixtures.User](tx, rows)
 	require.NoError(cursor.CloseRows())
 
 	_, err = tx.Exec("SELECT 1")

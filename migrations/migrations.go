@@ -1,3 +1,33 @@
+// Package migrations loads versioned SQL files from an [io/fs.FS] and applies any
+// that have not been run yet.
+//
+// Name files NNNN_description.sql (for example 0001_initial_schema.sql), embed them
+// with //go:embed, load with [Load], then call [Migrations.ApplyPostgres],
+// [Migrations.ApplySQLite], or [Migrations.Apply] after connecting. Pass your app
+// version string so each applied migration is recorded with the release that ran it.
+//
+// Example:
+//
+//	package db
+//
+//	import (
+//		"context"
+//		"embed"
+//
+//		"go.rtnl.ai/tidal"
+//		"go.rtnl.ai/tidal/migrations"
+//	)
+//
+//	//go:embed migrations/*.sql
+//	var migrationFS embed.FS
+//
+//	func ApplySchema(ctx context.Context, db *tidal.DB) error {
+//		m, err := migrations.Load(migrationFS)
+//		if err != nil {
+//			return err
+//		}
+//		return m.Apply(ctx, db, "v1.4.0")
+//	}
 package migrations
 
 import (
@@ -15,7 +45,7 @@ import (
 	"strings"
 	"time"
 
-	"go.rtnl.ai/tidal"
+	"go.rtnl.ai/tidal/conn"
 	"go.rtnl.ai/x/dsn"
 	"go.rtnl.ai/x/typecase"
 )
@@ -117,7 +147,7 @@ func Load(files fs.FS) (migrations Migrations, err error) {
 type Migrations []*Migration
 
 // Apply runs pending migrations using the backend-specific method for the connection provider.
-func (m Migrations) Apply(ctx context.Context, db *tidal.DB, version string) error {
+func (m Migrations) Apply(ctx context.Context, db conn.Beginner, version string) error {
 	// Sort the migrations by ID
 	m.Sort()
 
@@ -178,9 +208,9 @@ SELECT id, name, version, applied FROM migrations
 `
 
 // Retrieve the last applied migration info from the migrations table.
-func LastApplied(ctx context.Context, db *tidal.DB) (migration *Migration, err error) {
+func LastApplied(ctx context.Context, db conn.Beginner) (migration *Migration, err error) {
 	var tx *sql.Tx
-	if tx, err = db.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true}); err != nil {
+	if tx, err = db.SQLDB().BeginTx(ctx, &sql.TxOptions{ReadOnly: true}); err != nil {
 		return nil, fmt.Errorf("could not begin transaction: %w", err)
 	}
 	defer tx.Rollback()

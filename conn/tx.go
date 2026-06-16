@@ -1,8 +1,9 @@
-package tidal
+package conn
 
 import (
 	"database/sql"
 
+	"go.rtnl.ai/tidal/bind"
 	"go.rtnl.ai/x/dsn"
 )
 
@@ -22,7 +23,7 @@ func newTxn(tx *sql.Tx, uri *dsn.DSN) Tx {
 	return &Txn{
 		Tx:          tx,
 		dsn:         uri.Clone(),
-		placeholder: PlaceholderFor(uri.Provider),
+		placeholder: bind.PlaceholderFor(uri.Provider),
 	}
 }
 
@@ -30,7 +31,7 @@ func newTxn(tx *sql.Tx, uri *dsn.DSN) Tx {
 type Txn struct {
 	*sql.Tx
 	dsn         *dsn.DSN
-	placeholder PlaceholderType
+	placeholder bind.PlaceholderType
 }
 
 // Returns the DSN provider (for example [dsn.Postgres] or [dsn.SQLite3]).
@@ -44,13 +45,13 @@ func (t *Txn) DSN() *dsn.DSN {
 }
 
 // Returns the placeholder type for the configured database connection.
-func (t *Txn) Placeholder() PlaceholderType {
+func (t *Txn) Placeholder() bind.PlaceholderType {
 	return t.placeholder
 }
 
 // Exec runs a query after rewriting placeholders for the configured driver.
 func (t *Txn) Exec(query string, args ...sql.NamedArg) (sql.Result, error) {
-	p, err := Rewrite(query, args, t.placeholder)
+	p, err := bind.Rewrite(query, args, t.placeholder)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +60,7 @@ func (t *Txn) Exec(query string, args ...sql.NamedArg) (sql.Result, error) {
 
 // Query runs a query after rewriting placeholders for the configured driver.
 func (t *Txn) Query(query string, args ...sql.NamedArg) (*sql.Rows, error) {
-	p, err := Rewrite(query, args, t.placeholder)
+	p, err := bind.Rewrite(query, args, t.placeholder)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +69,7 @@ func (t *Txn) Query(query string, args ...sql.NamedArg) (*sql.Rows, error) {
 
 // QueryRow runs a query after rewriting placeholders for the configured driver.
 func (t *Txn) QueryRow(query string, args ...sql.NamedArg) *Row {
-	p, err := Rewrite(query, args, t.placeholder)
+	p, err := bind.Rewrite(query, args, t.placeholder)
 	if err != nil {
 		return &Row{err: err}
 	}

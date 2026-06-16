@@ -8,6 +8,23 @@
 
 Tidal provides internal mechanisms for managing SQL databases in Rotational applications. It provides a migrations mechanism for storing schema versions inside the database and automatically applying schema changes. It also provides a CRUD and Model interface for use with direct SQL statements rather than ORM functionality. Tidal is not meant to be generally used but implements the Rotational SQL pattern.
 
+Import [`go.rtnl.ai/tidal`](https://pkg.go.dev/go.rtnl.ai/tidal) in application code. The root package re-exports the API (`tidal.Open`, `tidal.New`, `tidal.CRUD`, and so on). Subpackages are public when you need a narrower import.
+
+## Packages
+
+| Import | Purpose |
+| --- | --- |
+| [`go.rtnl.ai/tidal`](https://pkg.go.dev/go.rtnl.ai/tidal) | Main entry point — re-exports connections, models, filters, and CRUD |
+| [`go.rtnl.ai/tidal/conn`](https://pkg.go.dev/go.rtnl.ai/tidal/conn) | `DB`, `Tx`, `Open`, `Wrap`, [`Beginner`](https://pkg.go.dev/go.rtnl.ai/tidal/conn#Beginner) |
+| [`go.rtnl.ai/tidal/model`](https://pkg.go.dev/go.rtnl.ai/tidal/model) | `Model`, `BaseModel`, `Operation` |
+| [`go.rtnl.ai/tidal/filter`](https://pkg.go.dev/go.rtnl.ai/tidal/filter) | `Filter`, `Clause`, list-query pagination |
+| [`go.rtnl.ai/tidal/store`](https://pkg.go.dev/go.rtnl.ai/tidal/store) | `CRUD`, `Cursor`, query generation |
+| [`go.rtnl.ai/tidal/bind`](https://pkg.go.dev/go.rtnl.ai/tidal/bind) | `:name` placeholder rewriting |
+| [`go.rtnl.ai/tidal/migrations`](https://pkg.go.dev/go.rtnl.ai/tidal/migrations) | Versioned SQL schema migrations |
+| [`go.rtnl.ai/tidal/fields`](https://pkg.go.dev/go.rtnl.ai/tidal/fields) | JSON and string-array column types for `Model` structs |
+| [`go.rtnl.ai/tidal/suite`](https://pkg.go.dev/go.rtnl.ai/tidal/suite) | Database test harness, `ConformsCRUD`, shared `testdata`, and integration tests |
+| [`go.rtnl.ai/tidal/suite/fixtures`](https://pkg.go.dev/go.rtnl.ai/tidal/suite/fixtures) | SQL fixture loader for test suites (`fixtures.File`) |
+
 ## Connecting
 
 Use [`tidal.Open`](https://pkg.go.dev/go.rtnl.ai/tidal#Open) to connect to a supported database. Pass a [`*dsn.DSN`](https://pkg.go.dev/go.rtnl.ai/x/dsn#DSN) from `go.rtnl.ai/x/dsn` (typically parsed from `DATABASE_URL`):
@@ -62,7 +79,7 @@ _, err = tx.Exec(
 
 Pass `tidal.Tx` to [`CRUD`](https://pkg.go.dev/go.rtnl.ai/tidal#CRUD) methods and [`Rows`](https://pkg.go.dev/go.rtnl.ai/tidal#Rows) cursors.
 
-When you need a raw `*sql.DB` — for migrations, third-party libraries, or admin DDL — use the embedded connection: `db.DB`.
+When you need a raw `*sql.DB` — for migrations, third-party libraries, or admin DDL — use the embedded connection (`db.DB`) or [`DB.SQLDB`](https://pkg.go.dev/go.rtnl.ai/tidal#DB.SQLDB).
 
 If you already have an open `*sql.DB`, wrap it with [`tidal.Wrap`](https://pkg.go.dev/go.rtnl.ai/tidal#Wrap). You still need a parsed `*dsn.DSN` so tidal knows which placeholder style to use:
 
@@ -153,7 +170,7 @@ func Migrations() (migrations.Migrations, error) {
 
 Call `Apply` (or `ApplyPostgres` / `ApplySQLite` directly) after connecting with `tidal.Open`. These methods create the `migrations` bookkeeping table if it does not exist, look up the last applied migration ID, and apply only migrations with a higher ID. The `version` string you pass is recorded alongside each migration so you can tell which release applied a given schema change.
 
-Pass your `*tidal.DB` connection to `Apply`:
+`Apply` and `LastApplied` accept any value that implements [`tidal.Beginner`](https://pkg.go.dev/go.rtnl.ai/tidal#Beginner) — typically your `*tidal.DB` from `tidal.Open`:
 
 ```go
 ctx := context.Background()
@@ -398,9 +415,45 @@ func (s *ModelTestSuite) TestUserCRUDConformance() {
 }
 ```
 
+`DatabaseSuite` creates a per-test context in `SetupTest`. Subtests run with child contexts and restore the parent context between `s.Run(...)` calls, so parent test code can safely call `s.Context()` and `s.BeginTx(nil)` between subtests.
+
+Per-test teardown defaults to truncating tables (`TeardownTruncate`) for fast integration tests. Set `s.Teardown = suite.TeardownDropAndMigrate` for migration/schema reset behavior, or `suite.TeardownNone` to skip data teardown.
+
 `Create` should return a valid insert each time — generate unique values (email, slug, etc.) inside the factory. `Update` receives the same instance that was created and inserted.
 
 Provide `Equal` when the default comparison is not enough (for example JSON fields that need normalization). Otherwise the suite compares list results on the `Fields(List)` column subset and tolerates database timestamp truncation (compares times to the second).
+
+Use these optional `CRUDConformance` fields when your model scan shape differs from default assumptions:
+
+- `ScanColumns map[tidal.Operation][]string` — override the exact columns fed into `Scan(op)` in Scan conformance.
+- `ScanOps []tidal.Operation` — limit which operations Scan conformance runs (default: `Create`, `Retrieve`, `Update`).
+- `FieldMap map[string]string` — map DB column name -> Go struct field name when snake_case matching is not enough (for acronyms like `client_id` -> `ClientID`, etc.).
+
+When `ScanColumns` is not set for `Update`, conformance falls back to `Fields(Retrieve)` if `Update` is a strict subset of retrieve columns; this matches models where `Scan(Update)` reads full-row projections.
+
+```go
+suite.ConformsCRUD(&s.DatabaseSuite, suite.CRUDConformance[*APIKey]{
+ Table:  "api_keys",
+ Create: newAPIKey,
+ Update: func(k *APIKey) { k.Description = sql.NullString{Valid: true, String: "updated"} },
+ FieldMap: map[string]string{
+  "client_id": "ClientID",
+ },
+ ScanColumns: map[tidal.Operation][]string{
+  tidal.Update: {"id", "description", "client_id", "secret", "created_by", "last_seen", "revoked", "created", "modified"},
+ },
+})
+```
+
+For simple schema setup in tests, use [`suite/fixtures`](https://pkg.go.dev/go.rtnl.ai/tidal/suite/fixtures) instead of full migrations:
+
+```go
+import "go.rtnl.ai/tidal/suite/fixtures"
+
+s.Migrations = fixtures.File("fields/sqlite_schema.sql")
+```
+
+SQL files live under `suite/testdata/` in this repository.
 
 ## Testing
 
@@ -412,6 +465,20 @@ go test ./... -race
 # Ignore go test cache and use verbose mode:
 go test ./... -count=1 -race -v
 ```
+
+To benchmark bind rewrite performance:
+
+```bash
+go test ./bind -run '^$' -bench '^BenchmarkRewrite$' -benchmem -count=1
+```
+
+Last observed benchmark on darwin/arm64 (Apple M2):
+
+| Case | ns/op | B/op | allocs/op |
+| --- | ---: | ---: | ---: |
+| OrderedSimple | 937.9 | 198 | 6 |
+| OrderedComplex | 1407 | 308 | 5 |
+| PositionalSimple | 549.4 | 256 | 4 |
 
 SQLite tests need no setup. Each test suite creates its own database file in a temporary directory.
 

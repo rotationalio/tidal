@@ -13,6 +13,10 @@ import (
 	"go.rtnl.ai/x/dsn"
 )
 
+//============================================================================
+// Suite Environment
+//============================================================================
+
 const (
 	DATABASE_URL          = "DATABASE_URL"
 	TEST_DATABASE_URL     = "TEST_DATABASE_URL"
@@ -21,6 +25,10 @@ const (
 	POSTGRES_DATABASE_URL = "POSTGRES_DATABASE_URL"
 )
 
+//============================================================================
+// Suite Errors
+//============================================================================
+
 var (
 	ErrInvalidProvider  = errors.New("invalid database provider for this suite")
 	ErrSqliteRequired   = errors.New("valid sqlite3 database url is required for this suite")
@@ -28,9 +36,28 @@ var (
 	ErrNoDatabaseURL    = errors.New("could not resolve or load database URL from the environment")
 )
 
+//============================================================================
+// Suite Defaults and Configuration
+//============================================================================
+
 const (
 	DefaultTimeout = 20 * time.Second
 )
+
+type TeardownStrategy int
+
+const (
+	// TeardownTruncate clears table rows and preserves schema/migrations.
+	TeardownTruncate TeardownStrategy = iota
+	// TeardownDropAndMigrate resets by dropping tables and re-running migrations.
+	TeardownDropAndMigrate
+	// TeardownNone only cancels the test context.
+	TeardownNone
+)
+
+//============================================================================
+// Suite Entry Point
+//============================================================================
 
 // Run takes a testing suite and runs all of the tests attached to it.
 func Run(t *testing.T, s suite.TestingSuite) {
@@ -40,16 +67,20 @@ func Run(t *testing.T, s suite.TestingSuite) {
 type DatabaseSuite struct {
 	suite.Suite
 	Provider
-	*tidal.DB // use DatabaseSuite.DB.DB to access the underlying sql.DB
+	*tidal.DB // use SQLDB() to access the underlying sql.DB
 
 	DatabaseURL string
 	Migrations  Migrations
 	Timeout     time.Duration
+	Teardown    TeardownStrategy
 
-	mu     sync.RWMutex // protects dsn and ctx
-	dsn    *dsn.DSN
-	ctx    context.Context
-	cancel context.CancelFunc
+	mu         sync.RWMutex // protects dsn and contexts
+	dsn        *dsn.DSN
+	ctx        context.Context    // Suite-wide context
+	cancel     context.CancelFunc // Cancel func for suite-wide context
+	testCtx    context.Context    // Per-test context
+	testCancel context.CancelFunc // Cancel func for per-test context
+	subCancel  context.CancelFunc // Cancel func for sub-contexts within tests
 }
 
 //============================================================================
@@ -133,27 +164,41 @@ func (s *DatabaseSuite) TearDownSuite() {
 	}
 }
 
+//============================================================================
+// Test Context Lifecycle
+//============================================================================
+
 // Creates a new per-test context. Takes a write lock on mu.
 func (s *DatabaseSuite) SetupTest() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.ctx, s.cancel = s.context()
+	// Parent context for the whole test; subtests derive child contexts.
+	s.testCtx, s.testCancel = s.context()
+	s.subCancel = nil
+	s.ctx, s.cancel = s.testCtx, s.testCancel
 }
 
 // Resets the database and cancels the context. Takes a write lock on mu.
 func (s *DatabaseSuite) TearDownTest() {
 	if !s.ReadOnly() {
-		s.ResetDB()
+		s.tearDownData()
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.cancel != nil {
-		s.cancel()
+	// Cancel child first, then parent.
+	if s.subCancel != nil {
+		s.subCancel()
+		s.subCancel = nil
 	}
+	if s.testCancel != nil {
+		s.testCancel()
+	}
+	// Clear references so stale contexts are never reused.
 	s.ctx, s.cancel = nil, nil
+	s.testCtx, s.testCancel, s.subCancel = nil, nil, nil
 }
 
 // Creates a new per-subtest context. Takes a write lock on mu.
@@ -161,10 +206,16 @@ func (s *DatabaseSuite) SetupSubTest() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.cancel != nil {
-		s.cancel()
+	// Defensive fallback if SetupTest was not run.
+	if s.testCtx == nil {
+		s.testCtx, s.testCancel = s.context()
 	}
-	s.ctx, s.cancel = s.context()
+	if s.subCancel != nil {
+		s.subCancel()
+	}
+	// Subtests get a child context so cancellation/timeouts stay local.
+	s.ctx, s.subCancel = context.WithTimeout(s.testCtx, s.Timeout)
+	s.cancel = s.subCancel
 }
 
 // Cancels the per-subtest context. Takes a write lock on mu.
@@ -172,14 +223,16 @@ func (s *DatabaseSuite) TearDownSubTest() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.cancel != nil {
-		s.cancel()
+	// End child context, then restore parent for between-subtest code.
+	if s.subCancel != nil {
+		s.subCancel()
+		s.subCancel = nil
 	}
-	s.ctx, s.cancel = nil, nil
+	s.ctx, s.cancel = s.testCtx, s.testCancel
 }
 
 //============================================================================
-// Testing Utilities
+// Context and Transaction Utilities
 //============================================================================
 
 // Returns an uneditable copy of the DSN currently being used by the suite.
@@ -221,12 +274,33 @@ func (s *DatabaseSuite) BeginTx(opts *sql.TxOptions) tidal.Tx {
 
 	require := s.Require()
 	require.NotNil(s.DB, "cannot begin a transaction because s.DB is nil")
+	require.NotNil(s.ctx, "cannot begin a transaction because s.Context is nil")
 
 	tx, err := s.DB.BeginTx(s.ctx, opts)
 	require.NoError(err, "could not begin transaction")
 
+	// Safety net for leaked test transactions.
+	s.T().Cleanup(func() {
+		_ = tx.Rollback()
+	})
+
 	return tx
 }
+
+func (s *DatabaseSuite) tearDownData() {
+	switch s.Teardown {
+	case TeardownDropAndMigrate:
+		s.ResetDB()
+	case TeardownNone:
+		// Skip data teardown.
+	default:
+		s.TruncateTables()
+	}
+}
+
+//============================================================================
+// Database Utilities
+//============================================================================
 
 // Applies the migrations to the database. Does not acquire mu.
 func (s *DatabaseSuite) Migrate() {

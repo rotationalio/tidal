@@ -1,4 +1,17 @@
-package tidal
+// Package filter builds list-query clauses for sorting and pagination.
+//
+// Use [Filter] for ORDER BY, LIMIT, and OFFSET. Combine with [Clause] for WHERE
+// conditions.
+//
+// Example:
+//
+//	f := (&filter.Filter{}).OrderBy("-created").Limit(20)
+//	listFilter := &filter.Clause{
+//		SQL:  "WHERE status = :status " + f.Clause(),
+//		Args: []sql.NamedArg{sql.Named("status", "active")},
+//	}
+//	cursor, err := crud.List(tx, listFilter)
+package filter
 
 import (
 	"database/sql"

@@ -1,3 +1,11 @@
+// Package fixtures loads SQL files from disk and applies them in database test suites.
+//
+// Use [File] to reference SQL under suite/testdata, or construct a [Fixture] from any
+// path. Fixtures implement the [suite.Migrations] interface.
+//
+// Example:
+//
+//	s.Migrations = fixtures.File("fields/sqlite_schema.sql")
 package fixtures
 
 import (
@@ -8,8 +16,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 
-	"go.rtnl.ai/tidal"
+	"go.rtnl.ai/tidal/conn"
 )
 
 // Fixtures are similar to migrations, they load a SQL query from a file on disk and
@@ -19,6 +28,15 @@ import (
 //
 // The fixture is simply a string to a path on disk, e.g. "testdata/fixtures/users.sql"
 type Fixture string
+
+// File returns a fixture for a SQL file under suite/testdata.
+func File(name string) Fixture {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("fixtures: could not resolve testdata directory")
+	}
+	return Fixture(filepath.Join(filepath.Dir(file), "..", "testdata", name))
+}
 
 func (path Fixture) SQL() (_ string, err error) {
 	var f *os.File
@@ -35,14 +53,14 @@ func (path Fixture) SQL() (_ string, err error) {
 }
 
 // Implements the suite.Migrations interface so that a fixture can be used as a migration.
-func (path Fixture) Apply(ctx context.Context, db *tidal.DB, _ string) (err error) {
+func (path Fixture) Apply(ctx context.Context, db conn.Beginner, _ string) (err error) {
 	var query string
 	if query, err = path.SQL(); err != nil {
 		return err
 	}
 
 	var tx *sql.Tx
-	if tx, err = db.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
+	if tx, err = db.SQLDB().BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
 		return errors.Join(err, fmt.Errorf("could not begin transaction to apply fixture %q", path), err)
 	}
 	defer tx.Rollback()
@@ -71,9 +89,9 @@ func Glob(pattern string) (fixtures Fixtures, err error) {
 	return fixtures, nil
 }
 
-func (fs Fixtures) Apply(ctx context.Context, db *tidal.DB, version string) (err error) {
+func (fs Fixtures) Apply(ctx context.Context, db conn.Beginner, version string) (err error) {
 	var tx *sql.Tx
-	if tx, err = db.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
+	if tx, err = db.SQLDB().BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
 		return errors.Join(err, fmt.Errorf("could not begin transaction to apply fixtures"), err)
 	}
 	defer tx.Rollback()

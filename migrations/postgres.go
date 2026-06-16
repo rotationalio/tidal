@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"go.rtnl.ai/tidal"
+	"go.rtnl.ai/tidal/conn"
 )
 
 const pgMigrationTable = `
@@ -39,34 +39,34 @@ const (
 // the database is first connected to. This method checks that the migrations table
 // exists and if not, it creates the table. A PostgreSQL advisory lock is used to ensure
 // that only one instance of the application can apply migrations at a time.
-func (m Migrations) ApplyPostgres(ctx context.Context, db *tidal.DB, version string) (err error) {
+func (m Migrations) ApplyPostgres(ctx context.Context, db conn.Beginner, version string) (err error) {
 	// Acquire a single connection so that we can acquire the advisory lock.
-	var conn *sql.Conn
-	if conn, err = db.Conn(ctx); err != nil {
+	var c *sql.Conn
+	if c, err = db.SQLDB().Conn(ctx); err != nil {
 		return fmt.Errorf("could not acquire connection: %w", err)
 	}
-	defer conn.Close()
+	defer c.Close()
 
 	// Acquire the advisory lock.
-	if _, err = conn.ExecContext(ctx, acquireMigrationLockSQL, AdvisoryLockID); err != nil {
+	if _, err = c.ExecContext(ctx, acquireMigrationLockSQL, AdvisoryLockID); err != nil {
 		return fmt.Errorf("could not acquire advisory lock: %w", err)
 	}
 
 	// Ensure the advisory lock is released.
 	defer func() {
-		if _, cerr := conn.ExecContext(ctx, releaseMigrationLockSQL, AdvisoryLockID); cerr != nil {
+		if _, cerr := c.ExecContext(ctx, releaseMigrationLockSQL, AdvisoryLockID); cerr != nil {
 			err = errors.Join(err, cerr)
 		}
 	}()
 
 	// Create the migrations table if it does not exist.
-	if _, err = conn.ExecContext(ctx, pgMigrationTable); err != nil {
+	if _, err = c.ExecContext(ctx, pgMigrationTable); err != nil {
 		return fmt.Errorf("could not create migrations table: %w", err)
 	}
 
 	// Start a transaction to apply the migrations.
 	var tx *sql.Tx
-	if tx, err = conn.BeginTx(ctx, &sql.TxOptions{ReadOnly: false}); err != nil {
+	if tx, err = c.BeginTx(ctx, &sql.TxOptions{ReadOnly: false}); err != nil {
 		return fmt.Errorf("could not begin transaction: %w", err)
 	}
 	defer tx.Rollback()

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"go.rtnl.ai/tidal"
 	"go.rtnl.ai/x/dsn"
@@ -19,6 +20,14 @@ type SQLiteSuite struct {
 func (s *SQLiteSuite) SetupSuite() {
 	s.DatabaseSuite.Provider = &SQLiteProvider{}
 	s.DatabaseSuite.SetupSuite()
+
+	// File-backed SQLite tests are more deterministic with a single connection.
+	if s.DB != nil {
+		path := s.DSN().Path
+		if path != "" && path != ":memory:" {
+			s.DB.SetMaxOpenConns(1)
+		}
+	}
 }
 
 type SQLiteProvider struct {
@@ -156,7 +165,10 @@ func (p *SQLiteProvider) TruncateTables(ctx context.Context, conn *tidal.DB) (er
 
 		// Restart the auto-increment counter if it exists.
 		if _, err = tx.Exec("DELETE FROM sqlite_sequence WHERE name = ?", table); err != nil {
-			return fmt.Errorf("could not restart auto-increment counter for table %s: %w", table, err)
+			// sqlite_sequence exists only after a table with AUTOINCREMENT is created.
+			if !strings.Contains(err.Error(), "no such table: sqlite_sequence") {
+				return fmt.Errorf("could not restart auto-increment counter for table %s: %w", table, err)
+			}
 		}
 	}
 

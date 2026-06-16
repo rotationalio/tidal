@@ -1,10 +1,15 @@
-package tidal
+package store
 
-import "database/sql"
+import (
+	"database/sql"
+
+	"go.rtnl.ai/tidal/conn"
+	"go.rtnl.ai/tidal/model"
+)
 
 // Cursor is a generic interface that allows for iteration and instantiation over a
 // collection of models usually from the rows of a database query.
-type Cursor[M Model] interface {
+type Cursor[M model.Model] interface {
 	// Advances the cursor to the next row; returns false when there are no more
 	// rows.
 	Next() bool
@@ -34,15 +39,15 @@ type Cursor[M Model] interface {
 //============================================================================
 
 // Rows wraps [sql.Rows] as a [Cursor] for type M.
-func Rows[M Model](tx Tx, rows *sql.Rows) Cursor[M] {
+func Rows[M model.Model](tx conn.Tx, rows *sql.Rows) Cursor[M] {
 	return &rowsCursor[M]{
 		tx:   tx,
 		rows: rows,
 	}
 }
 
-type rowsCursor[M Model] struct {
-	tx   Tx
+type rowsCursor[M model.Model] struct {
+	tx   conn.Tx
 	rows *sql.Rows
 }
 
@@ -51,11 +56,11 @@ func (c *rowsCursor[M]) Next() bool {
 }
 
 func (c *rowsCursor[M]) Model() (M, error) {
-	model := Make[M]()
-	if err := model.Scan(List, c.rows); err != nil {
-		return model, err
+	m := model.Make[M]()
+	if err := m.Scan(model.List, c.rows); err != nil {
+		return m, err
 	}
-	return model, nil
+	return m, nil
 }
 
 func (c *rowsCursor[M]) List() (models []M, err error) {
@@ -87,15 +92,15 @@ func (c *rowsCursor[M]) Err() error {
 // Empty Cursor
 //============================================================================
 
-// Returns a [Cursor] that returns no rows and always returns the provided
+// Empty returns a [Cursor] that returns no rows and always returns the provided
 // error, which may be nil.
-func Empty[M Model](err error) Cursor[M] {
+func Empty[M model.Model](err error) Cursor[M] {
 	return &emptyCursor[M]{
 		err: err,
 	}
 }
 
-type emptyCursor[M Model] struct {
+type emptyCursor[M model.Model] struct {
 	err error
 }
 

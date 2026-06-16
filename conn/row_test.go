@@ -1,4 +1,4 @@
-package tidal_test
+package conn_test
 
 import (
 	"context"
@@ -6,7 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.rtnl.ai/tidal"
+	"go.rtnl.ai/tidal/bind"
+	"go.rtnl.ai/tidal/conn"
 	"go.rtnl.ai/x/dsn"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -18,12 +19,12 @@ func TestRowBindError(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	tidalDB := tidal.Wrap(db, &dsn.DSN{Provider: "mysql"})
+	tidalDB := conn.Wrap(db, &dsn.DSN{Provider: "mysql"})
 	tx, err := tidalDB.BeginTx(context.Background(), nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = tx.Rollback() })
 
 	row := tx.QueryRow("SELECT :x", sql.Named("x", 1))
-	require.ErrorIs(t, row.Scan(new(int)), tidal.ErrUnsupportedPlaceholder)
-	require.ErrorIs(t, row.Err(), tidal.ErrUnsupportedPlaceholder)
+	require.ErrorIs(t, row.Scan(new(int)), bind.ErrUnsupportedPlaceholder)
+	require.ErrorIs(t, row.Err(), bind.ErrUnsupportedPlaceholder)
 }

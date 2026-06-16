@@ -3,8 +3,8 @@ package fields_test
 import (
 	"testing"
 
-	"go.rtnl.ai/tidal/fixtures"
 	"go.rtnl.ai/tidal/suite"
+	"go.rtnl.ai/tidal/suite/fixtures"
 )
 
 //============================================================================
@@ -17,14 +17,10 @@ type FieldsSqliteTestSuite struct {
 
 func TestSQLiteFields(t *testing.T) {
 	s := &FieldsSqliteTestSuite{}
-	s.Migrations = fixtures.Fixture("testdata/sqlite_schema.sql")
+	s.Migrations = fixtures.File("fields/sqlite_schema.sql")
 
 	// Run the tests
 	suite.Run(t, s)
-}
-
-func (s *FieldsSqliteTestSuite) AfterTest(suiteName, testName string) {
-	s.ResetDB()
 }
 
 //============================================================================
@@ -37,12 +33,9 @@ type FieldsPostgresTestSuite struct {
 
 func TestPostgresFields(t *testing.T) {
 	s := &FieldsPostgresTestSuite{}
-	s.Migrations = fixtures.Fixture("testdata/postgres_schema.sql")
+	s.Migrations = fixtures.File("fields/postgres_schema.sql")
 
 	// Run the tests
 	suite.Run(t, s)
 }
 
-func (s *FieldsPostgresTestSuite) AfterTest(suiteName, testName string) {
-	s.ResetDB()
-}

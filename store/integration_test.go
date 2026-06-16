@@ -1,4 +1,4 @@
-package tidal_test
+package store_test
 
 import (
 	"testing"
@@ -6,10 +6,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/tidal/migrations"
 	"go.rtnl.ai/tidal/suite"
-	"go.rtnl.ai/tidal/suite/fixtures"
 )
 
-type TidalTestSuite struct {
+type StoreTestSuite struct {
 	suite.DatabaseSuite
 }
 
@@ -19,7 +18,7 @@ type TidalTestSuite struct {
 
 func TestPostgres(t *testing.T) {
 	var err error
-	s := &TidalTestSuite{}
+	s := &StoreTestSuite{}
 	s.Provider = &suite.PostgresProvider{}
 	s.Migrations, err = migrations.Load(suite.PostgresTestdata)
 	require.NoError(t, err, "could not load postgres migrations")
@@ -36,7 +35,7 @@ func TestPostgres(t *testing.T) {
 
 func TestSQLite3(t *testing.T) {
 	var err error
-	s := &TidalTestSuite{}
+	s := &StoreTestSuite{}
 	s.Provider = &suite.SQLiteProvider{}
 	s.Migrations, err = migrations.Load(suite.SQLiteTestdata)
 	require.NoError(t, err, "could not load sqlite migrations")
@@ -45,18 +44,4 @@ func TestSQLite3(t *testing.T) {
 	require.NoError(t, err, "could not resolve sqlite DSN")
 
 	suite.Run(t, s)
-}
-
-//============================================================================
-// CRUD Conformance Tests Testing (User Model)
-//============================================================================
-
-func (s *TidalTestSuite) TestUserCRUDConformance() {
-	suite.ConformsCRUD(&s.DatabaseSuite, suite.CRUDConformance[*fixtures.User]{
-		Table:  "users",
-		Create: fixtures.NewConformanceUser,
-		Update: func(u *fixtures.User) {
-			u.Name = "Updated Conformance User"
-		},
-	})
 }

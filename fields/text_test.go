@@ -2,10 +2,44 @@ package fields_test
 
 import (
 	"database/sql"
+	"testing"
 
+	"github.com/stretchr/testify/require"
 	. "go.rtnl.ai/tidal/fields"
 )
 
+// Verifies StringArray.Equal normalizes nil and empty values and compares elements.
+func TestStringArrayEqual(t *testing.T) {
+	t.Run("NilAndEmpty", func(t *testing.T) {
+		// DB round-trips can produce nil or [] interchangeably for empty arrays.
+		require.True(t, StringArray(nil).Equal(StringArray{}))
+	})
+
+	t.Run("Elementwise", func(t *testing.T) {
+		require.True(t, StringArray{"a", "b"}.Equal(StringArray{"a", "b"}))
+		require.True(t, StringArray{"b", "a"}.Equal(StringArray{"a", "b"}))
+		require.False(t, StringArray{"a", "b"}.Equal(StringArray{"a", "c"}))
+	})
+}
+
+// Verifies NullStringArray.Equal applies SQL NULL normalization for empty arrays.
+func TestNullStringArrayEqual(t *testing.T) {
+	t.Run("EmptyNormalizesToNull", func(t *testing.T) {
+		a := NullStringArray{Valid: false, StringArray: nil}
+		b := NullStringArray{Valid: true, StringArray: StringArray{}}
+		require.True(t, a.Equal(b))
+	})
+
+	t.Run("ValueCompare", func(t *testing.T) {
+		a := NullStringArray{Valid: true, StringArray: StringArray{"x", "y"}}
+		b := NullStringArray{Valid: true, StringArray: StringArray{"x", "y"}}
+		c := NullStringArray{Valid: true, StringArray: StringArray{"x", "z"}}
+		require.True(t, a.Equal(b))
+		require.False(t, a.Equal(c))
+	})
+}
+
+// Verifies StringArray database round-trip behavior on SQLite.
 func (s *FieldsSqliteTestSuite) TestStringArray() {
 	var (
 		alpha StringArray = StringArray{"a", "b", "c"}
@@ -84,6 +118,7 @@ func (s *FieldsSqliteTestSuite) TestStringArray() {
 	})
 }
 
+// Verifies StringArray database round-trip behavior on Postgres.
 func (s *FieldsPostgresTestSuite) TestStringArray() {
 	var (
 		alpha   StringArray = StringArray{"a", "b", "c"}
@@ -175,6 +210,7 @@ func (s *FieldsPostgresTestSuite) TestStringArray() {
 	})
 }
 
+// Verifies NullStringArray database round-trip behavior on SQLite.
 func (s *FieldsSqliteTestSuite) TestNullStringArray() {
 	var (
 		alpha NullStringArray = NullStringArray{StringArray: StringArray{"a", "b", "c"}, Valid: true}
@@ -229,6 +265,7 @@ func (s *FieldsSqliteTestSuite) TestNullStringArray() {
 	})
 }
 
+// Verifies NullStringArray database round-trip behavior on Postgres.
 func (s *FieldsPostgresTestSuite) TestNullStringArray() {
 	var (
 		alpha   NullStringArray = NullStringArray{StringArray: StringArray{"a", "b", "c"}, Valid: true}

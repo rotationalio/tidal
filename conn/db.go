@@ -1,4 +1,4 @@
-package tidal
+package conn
 
 import (
 	"context"
@@ -10,6 +10,21 @@ import (
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 )
+
+// Beginner is implemented by [DB]. Optional tidal packages such as migrations depend
+// on this interface instead of the root tidal facade.
+type Beginner interface {
+	Provider() string
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (Tx, error)
+	SQLDB() *sql.DB
+}
+
+var _ Beginner = (*DB)(nil)
+
+// SQLDB returns the underlying [sql.DB] connection pool.
+func (db *DB) SQLDB() *sql.DB {
+	return db.DB
+}
 
 // DB is a database connection that knows its provider and returns Tx transactions
 // with automatic :name placeholder rewriting. Use [Open] to connect to a

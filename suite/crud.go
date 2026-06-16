@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/tidal"
+	"go.rtnl.ai/tidal/fields"
 	"go.rtnl.ai/ulid"
 	"go.rtnl.ai/x/typecase"
 )
@@ -38,7 +40,20 @@ type CRUDConformance[M tidal.Model] struct {
 	// need special handling (for example JSONB normalization).
 	Equal func(a, b M) bool
 
-	// Phases selects which conformance phases to run. When empty, all phases run.
+	// Optional override for the columns are fed to Scan for each operation.
+	// Key = operation, value = columns in scan order.
+	ScanColumns map[tidal.Operation][]string
+
+	// Optional override to limit which operations the Scan phase exercises.
+	// When nil, the default is used: Create, Retrieve, and Update.
+	ScanOps []tidal.Operation
+
+	// Optional override to map database column names to Go struct field names when
+	// a model column does not map directly by snake_case conversion.
+	FieldMap map[string]string
+
+	// Optional override to select which conformance phases to run. When nil, the
+	// default is used: Shape, Scan, and RoundTrip.
 	Phases []CRUDPhase
 }
 
@@ -81,7 +96,7 @@ func ConformsCRUD[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M]) {
 			})
 		case CRUDScan:
 			s.Run("Scan", func() {
-				testCRUDScan(s, cfg, cfg.Equal)
+				testCRUDScan(s, cfg)
 			})
 		case CRUDRoundTrip:
 			s.Run("RoundTrip", func() {
@@ -149,34 +164,40 @@ func testCRUDShape[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M], crud
 //
 // For each operation we:
 //  1. Build a model with Create() ("original").
-//  2. Derive fake row values from Params in Fields order (valuesForScan).
-//  3. Feed those values into Scan via mockScanner (pretends to be *sql.Rows).
-//  4. Compare the scanned model to original.
+//  2. Resolve scan columns (ScanColumns override -> Update heuristic -> Fields(op)).
+//  3. Derive fake row values from Params in resolved scan-column order (valuesForScan).
+//  4. Feed those values into Scan via mockScanner (pretends to be *sql.Rows).
+//  5. Compare only Fields(op) between scanned model and original.
 //
 // This catches Scan/Fields/Params mismatches before paying for a DB round-trip.
 // List is omitted because it uses a different column subset than Create/Retrieve.
-func testCRUDScan[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M], equal func(a, b M) bool) {
+func testCRUDScan[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M]) {
 	s.T().Helper()
 	require := s.Require()
-	equalFn := equal
-	if equalFn == nil {
-		equalFn = func(a, b M) bool { return defaultEqual(s.T(), a, b) }
-	}
 
-	for _, op := range []tidal.Operation{tidal.Create, tidal.Retrieve, tidal.Update} {
+	for _, op := range scanOps(cfg.ScanOps) {
 		s.Run(op.String(), func() {
 			// Source of truth: what the caller's factory produces.
 			original := cfg.Create()
+			scanColumns := columnsForScan(s.T(), original, op, cfg.ScanColumns)
 
 			// NOT a database row — values assembled from Params to mimic what a row
 			// would contain if Params and Fields are consistent.
-			values := valuesForScan(s.T(), original, op)
-			require.Len(values, len(original.Fields(op)), "scan values and Fields(%s) length mismatch", op)
+			values := valuesForScan(s.T(), original, op, scanColumns)
+			require.Len(values, len(scanColumns), "scan values and Scan(%s) column length mismatch", op)
 
 			// Fresh zero instance; only Scan should populate it.
 			got := tidal.Make[M]()
 			require.NoError(got.Scan(op, &mockScanner{values: values}))
-			require.True(equalFn(original, got), "Scan(%s) did not round-trip model values", op)
+
+			// Scan may hydrate more columns than Params(Update) includes; compare only
+			// the operation's declared field subset for conformance.
+			require.True(
+				equalListFields(s.T(), original, got, original.Fields(op), nil, cfg.FieldMap),
+				"Scan(%s) did not round-trip model values for Fields(%s)",
+				op,
+				op,
+			)
 		})
 	}
 }
@@ -238,7 +259,7 @@ func testCRUDRoundTrip[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M], 
 	require.Len(models, 1, "List should return exactly one model")
 
 	// Compare only List columns (not full struct — List Scan omits password, etc.).
-	require.True(equalListFields(s.T(), created, models[0], created.Fields(tidal.List)), "List returned unexpected model")
+	require.True(equalListFields(s.T(), created, models[0], created.Fields(tidal.List), cfg.Equal, cfg.FieldMap), "List returned unexpected model")
 
 	// --- UPDATE ---
 	// Caller mutates the same in-memory instance; CRUD Update runs Prepare/Validate
@@ -270,7 +291,7 @@ func modelID[M tidal.Model](t testing.TB, m M) sql.NamedArg {
 			return sql.Named("id", param.Value)
 		}
 	}
-	t.Fatalf("model %T does not expose id in Params(Create)", m)
+	require.FailNowf(t, "missing id param", "model %T does not expose id in Params(Create)", m)
 	return sql.NamedArg{}
 }
 
@@ -279,32 +300,74 @@ func modelID[M tidal.Model](t testing.TB, m M) sql.NamedArg {
 // Takes values from Params (Create as base, then overlaid with Params(op)) and
 // orders them to match Fields(op) — the same order Scan passes to sql.Rows.Scan.
 // If a field appears in Fields but not in Params, the test fails (that is a model bug).
-func valuesForScan[M tidal.Model](t testing.TB, m M, op tidal.Operation) []any {
+func valuesForScan[M tidal.Model](t testing.TB, m M, op tidal.Operation, columns []string) []any {
 	t.Helper()
-	// Scan reads columns in Fields(op) order — this slice must match that exactly.
-	fields := m.Fields(op)
 
 	// Build a name→value lookup. Start with Create params (full row shape), then
-	// overlay Params(op) so operation-specific bindings win (e.g. Update timestamps).
-	byName := make(map[string]any, len(fields))
+	// overlay Retrieve/Params(op) so operation-specific bindings win (e.g. Update
+	// timestamps).
+	byName := make(map[string]any, len(columns))
 	for _, param := range m.Params(tidal.Create) {
+		byName[param.Name] = param.Value
+	}
+	for _, param := range m.Params(tidal.Retrieve) {
 		byName[param.Name] = param.Value
 	}
 	for _, param := range m.Params(op) {
 		byName[param.Name] = param.Value
 	}
 
-	// Emit values in Fields order, not map iteration order.
-	values := make([]any, len(fields))
-	for i, field := range fields {
-		value, ok := byName[field]
+	// Emit values in scan-column order, not map iteration order.
+	values := make([]any, len(columns))
+	for i, column := range columns {
+		value, ok := byName[column]
+		// Every column Scan expects must have a bind value somewhere in Params.
+		require.Truef(t, ok, "model %T is missing value for Scan(%s) column %q", m, op, column)
 		if !ok {
-			// Every column Scan expects must have a bind value somewhere in Params.
-			t.Fatalf("model %T is missing value for Fields(%s) entry %q", m, op, field)
+			return nil
 		}
 		values[i] = value
 	}
 	return values
+}
+
+// Resolves the scan-column set for a conformance operation.
+func columnsForScan[M tidal.Model](t testing.TB, m M, op tidal.Operation, overrides map[tidal.Operation][]string) []string {
+	t.Helper()
+	if columns, ok := overrides[op]; ok {
+		if len(columns) == 0 {
+			require.FailNowf(t, "empty scan columns override", "ScanColumns(%s) must not be empty", op)
+		}
+		return append([]string(nil), columns...)
+	}
+
+	if op == tidal.Update {
+		updateColumns := m.Fields(tidal.Update)
+		retrieveColumns := m.Fields(tidal.Retrieve)
+		if len(retrieveColumns) > len(updateColumns) && containsAllColumns(retrieveColumns, updateColumns) {
+			return retrieveColumns
+		}
+	}
+
+	return m.Fields(op)
+}
+
+// Resolves scan operations for conformance.
+func scanOps(overrides []tidal.Operation) []tidal.Operation {
+	if len(overrides) != 0 {
+		return overrides
+	}
+	return []tidal.Operation{tidal.Create, tidal.Retrieve, tidal.Update}
+}
+
+// Reports if every member in subset appears in columns.
+func containsAllColumns(columns, subset []string) bool {
+	for _, column := range subset {
+		if !slices.Contains(columns, column) {
+			return false
+		}
+	}
+	return true
 }
 
 // Default Equal when the caller does not provide one.
@@ -316,8 +379,12 @@ func defaultEqual[M tidal.Model](tb testing.TB, a, b M) bool {
 // Compares two models on the subset of columns returned by Fields(List). List
 // Scan does not populate password, dob, etc., so we must not use full struct
 // Equal.
-func equalListFields[M tidal.Model](tb testing.TB, a, b M, columns []string) bool {
+func equalListFields[M tidal.Model](tb testing.TB, a, b M, columns []string, equal func(a, b M) bool, fieldMap map[string]string) bool {
 	tb.Helper()
+	if equal != nil {
+		return equal(a, b)
+	}
+
 	av := reflect.ValueOf(a)
 	bv := reflect.ValueOf(b)
 
@@ -332,11 +399,11 @@ func equalListFields[M tidal.Model](tb testing.TB, a, b M, columns []string) boo
 	// Only check columns List actually scanned — unlisted fields stay zero-valued
 	// on the List result and must not be compared.
 	for _, column := range columns {
-		af, ok := fieldByColumn(tb, av, column)
+		af, ok := fieldByColumn(tb, av, column, fieldMap)
 		if !ok {
 			return false
 		}
-		bf, ok := fieldByColumn(tb, bv, column)
+		bf, ok := fieldByColumn(tb, bv, column, fieldMap)
 		if !ok {
 			return false
 		}
@@ -363,6 +430,20 @@ func equalValues(tb testing.TB, a, b reflect.Value) bool {
 
 	if a.Type() != b.Type() {
 		return false
+	}
+
+	// Custom field wrappers that need DB round-trip normalization.
+	if a.Type() == reflect.TypeOf(fields.StringArray{}) {
+		return a.Interface().(fields.StringArray).Equal(b.Interface().(fields.StringArray))
+	}
+	if a.Type() == reflect.TypeOf(fields.NullStringArray{}) {
+		return a.Interface().(fields.NullStringArray).Equal(b.Interface().(fields.NullStringArray))
+	}
+	if a.Type() == reflect.TypeOf(fields.JSONB{}) {
+		return a.Interface().(fields.JSONB).Equal(b.Interface().(fields.JSONB))
+	}
+	if a.Type() == reflect.TypeOf(fields.NullJSONB{}) {
+		return a.Interface().(fields.NullJSONB).Equal(b.Interface().(fields.NullJSONB))
 	}
 
 	switch a.Kind() {
@@ -400,17 +481,24 @@ func equalValues(tb testing.TB, a, b reflect.Value) bool {
 }
 
 // Locates a struct field for a database column name (snake_case), including embedded structs.
-func fieldByColumn(tb testing.TB, v reflect.Value, column string) (reflect.Value, bool) {
+func fieldByColumn(tb testing.TB, v reflect.Value, column string, fieldMap map[string]string) (reflect.Value, bool) {
 	tb.Helper()
+	fieldName, hasMappedField := fieldMap[column]
+
 	typ := v.Type()
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
 		if field.Anonymous {
 			// Embedded BaseModel, etc. — search inside before giving up.
-			if fv, ok := fieldByColumn(tb, v.Field(i), column); ok {
+			if fv, ok := fieldByColumn(tb, v.Field(i), column, fieldMap); ok {
 				return fv, true
 			}
 			continue
+		}
+
+		// FieldMap takes precedence for explicit column->field mappings.
+		if hasMappedField && field.Name == fieldName {
+			return v.Field(i), true
 		}
 
 		// Match DB column name (snake_case) to Go field name (CamelCase).
