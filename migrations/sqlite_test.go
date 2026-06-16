@@ -18,8 +18,9 @@ type SQLiteTestSuite struct {
 }
 
 func TestSQLite(t *testing.T) {
-	// Run the tests
-	suite.Run(t, &SQLiteTestSuite{})
+	s := &SQLiteTestSuite{}
+	s.Teardown = suite.TeardownDropAndMigrate
+	suite.Run(t, s)
 }
 
 func (s *SQLiteTestSuite) TestMigrations() {

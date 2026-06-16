@@ -23,10 +23,6 @@ func TestSQLiteFields(t *testing.T) {
 	suite.Run(t, s)
 }
 
-func (s *FieldsSqliteTestSuite) AfterTest(suiteName, testName string) {
-	s.ResetDB()
-}
-
 //============================================================================
 // PostgreSQL Tests
 //============================================================================
@@ -43,6 +39,3 @@ func TestPostgresFields(t *testing.T) {
 	suite.Run(t, s)
 }
 
-func (s *FieldsPostgresTestSuite) AfterTest(suiteName, testName string) {
-	s.ResetDB()
-}

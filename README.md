@@ -415,6 +415,10 @@ func (s *ModelTestSuite) TestUserCRUDConformance() {
 }
 ```
 
+`DatabaseSuite` creates a per-test context in `SetupTest`. Subtests run with child contexts and restore the parent context between `s.Run(...)` calls, so parent test code can safely call `s.Context()` and `s.BeginTx(nil)` between subtests.
+
+Per-test teardown defaults to truncating tables (`TeardownTruncate`) for fast integration tests. Set `s.Teardown = suite.TeardownDropAndMigrate` for migration/schema reset behavior, or `suite.TeardownNone` to skip data teardown.
+
 `Create` should return a valid insert each time — generate unique values (email, slug, etc.) inside the factory. `Update` receives the same instance that was created and inserted.
 
 Provide `Equal` when the default comparison is not enough (for example JSON fields that need normalization). Otherwise the suite compares list results on the `Fields(List)` column subset and tolerates database timestamp truncation (compares times to the second).

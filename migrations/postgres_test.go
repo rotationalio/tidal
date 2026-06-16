@@ -18,8 +18,9 @@ type PostgresTestSuite struct {
 var postgresFS embed.FS
 
 func TestPostgres(t *testing.T) {
-	// Run the tests
-	suite.Run(t, &PostgresTestSuite{})
+	s := &PostgresTestSuite{}
+	s.Teardown = suite.TeardownDropAndMigrate
+	suite.Run(t, s)
 }
 
 func (s *PostgresTestSuite) TestMigrations() {
