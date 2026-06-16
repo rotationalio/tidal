@@ -115,14 +115,13 @@ type (
 	Where        = filter.Where
 	WhereOp      = builder.WhereOp
 
-	// Alias for [CustomFilter] for backwards compatibility; use [CustomFilter]
-	// instead.
+	// Deprecated: use [CustomFilter] instead.
 	Clause = CustomFilter
 )
 
-// Where Operations
-
 const (
+	// Where Operations
+
 	Eq        = builder.Eq
 	Ne        = builder.Ne
 	Gt        = builder.Gt
@@ -130,7 +129,12 @@ const (
 	Gte       = builder.Gte
 	Lte       = builder.Lte
 	Like      = builder.Like
-	ILike     = builder.ILike
+	IsNull    = builder.IsNull
+	IsNotNull = builder.IsNotNull
+	In        = builder.In
+
+	// Ordering
+
 	OrderASC  = builder.OrderASC
 	OrderDESC = builder.OrderDESC
 )

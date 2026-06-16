@@ -27,6 +27,10 @@ func (w *Where) IsEmpty() bool {
 
 // Set replaces any existing expression with a single condition.
 func (w *Where) Set(field string, op WhereOp, value any) {
+	if !shouldAddCondition(op, value) {
+		w.root = nil
+		return
+	}
 	w.root = &whereGroup{
 		children: []whereNode{{node: &whereCondition{field: field, op: op, value: value}}},
 	}
@@ -74,6 +78,9 @@ func (w *Where) Render() (string, []sql.NamedArg) {
 
 // Appends a condition to the current WHERE clause.
 func (w *Where) append(logical logicalOp, field string, op WhereOp, value any) {
+	if !shouldAddCondition(op, value) {
+		return
+	}
 	cond := &whereCondition{field: field, op: op, value: value}
 	if w.IsEmpty() {
 		w.root = &whereGroup{children: []whereNode{{node: cond}}}
@@ -161,10 +168,31 @@ func (g *whereGroup) render(params *[]sql.NamedArg, idx *int) string {
 func renderNode(node any, params *[]sql.NamedArg, idx *int) string {
 	switch n := node.(type) {
 	case *whereCondition:
-		*idx++
-		name := fmt.Sprintf("w%d", *idx)
-		*params = append(*params, sql.Named(name, n.value))
-		return fmt.Sprintf("%s %s :%s", n.field, n.op, name)
+		switch n.op {
+		case IsNull:
+			return fmt.Sprintf("%s IS NULL", n.field)
+		case IsNotNull:
+			return fmt.Sprintf("%s IS NOT NULL", n.field)
+		case In:
+			vals := inValues(n.value)
+			if len(vals) == 0 {
+				return ""
+			}
+			placeholders := make([]string, len(vals))
+			for i, v := range vals {
+				*idx++
+				name := fmt.Sprintf("w%d", *idx)
+				*params = append(*params, sql.Named(name, v))
+				placeholders[i] = ":" + name
+			}
+			return fmt.Sprintf("%s IN (%s)", n.field, strings.Join(placeholders, ", "))
+		default:
+			// All other operators are rendered as: "field op value"
+			*idx++
+			name := fmt.Sprintf("w%d", *idx)
+			*params = append(*params, sql.Named(name, n.value))
+			return fmt.Sprintf("%s %s :%s", n.field, n.op, name)
+		}
 	case *whereGroup:
 		return n.render(params, idx)
 	default:

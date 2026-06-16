@@ -113,7 +113,11 @@ cursor, err := crud.List(tx, (&tidal.Filter{}).OrderBy("name").Limit(10))
 users, err := cursor.List()
 ```
 
-[`Filter`](https://pkg.go.dev/go.rtnl.ai/tidal#Filter) builds `WHERE`, `ORDER BY`, `LIMIT`, and `OFFSET` clauses. Calling `Where` replaces any previous WHERE clause (like `OrderBy`, `Limit`, and `Offset`). `And`, `Or`, `AndGroup`, and `OrGroup` append to the current WHERE clause:
+[`Filter`](https://pkg.go.dev/go.rtnl.ai/tidal#Filter) builds ANSI SQL `WHERE`, `ORDER BY`, `LIMIT`, and `OFFSET` clauses. Calling `Where` replaces any previous WHERE clause (like `OrderBy`, `Limit`, and `Offset`). `And`, `Or`, `AndGroup`, and `OrGroup` append to the current WHERE clause.
+
+WHERE operators: `Eq`, `Ne`, `Gt`, `Lt`, `Gte`, `Lte`, `Like`, `In`, `IsNull`, and `IsNotNull`. An `In` condition with an empty slice is omitted. For case-insensitive matching, use `LOWER(column) LIKE LOWER(:param)` in a [`CustomFilter`](https://pkg.go.dev/go.rtnl.ai/tidal#CustomFilter) or apply your own normalization to the values before adding to a [`Filter`](https://pkg.go.dev/go.rtnl.ai/tidal#Filter).
+
+Flat `And`/`Or` chains follow SQL precedence: `Where("a", Eq, 1).And("b", Eq, 2).Or("c", Eq, 3)` renders `a = :w1 AND b = :w2 OR c = :w3`, which SQL parses as `(a AND b) OR c`. Use `AndGroup` or `OrGroup` for explicit grouping.
 
 ```go
 // Where replaces any previous WHERE clause.
@@ -124,6 +128,7 @@ f := (&tidal.Filter{}).
 // And/Or/AndGroup/OrGroup append to the current WHERE clause.
 f = (&tidal.Filter{}).
  Where("status", tidal.Eq, "active").
+ And("id", tidal.In, []int64{1, 2, 3}).
  And("age", tidal.Gte, 18).
  AndGroup(func(g *tidal.Where) {
   g.Where("role", tidal.Eq, "admin").Or("role", tidal.Eq, "editor")

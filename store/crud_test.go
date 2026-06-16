@@ -1,7 +1,6 @@
 package store_test
 
 import (
-	"database/sql"
 	"fmt"
 
 	"go.rtnl.ai/tidal"
@@ -44,8 +43,7 @@ func (s *StoreTestSuite) TestUpdateValidation() {
 // List + Filter
 //============================================================================
 
-// Exercises [tidal.Filter] ORDER BY / LIMIT / OFFSET against a real database.
-// WHERE scoping is supplied via [tidal.Clause] until Filter grows WHERE support.
+// Exercises [tidal.Filter] WHERE, ORDER BY, LIMIT, and OFFSET against a real database.
 func (s *StoreTestSuite) TestListFilter() {
 	require := s.Require()
 	crud := tidal.New[*fixtures.User]("users")
@@ -62,13 +60,13 @@ func (s *StoreTestSuite) TestListFilter() {
 		require.NoError(err)
 	}
 
-	f := (&tidal.Filter{}).OrderBy("name").Limit(2).Offset(1)
-	filter := &tidal.Clause{
-		SQL:  "WHERE name LIKE :pattern " + f.Clause(),
-		Args: []sql.NamedArg{sql.Named("pattern", "filter-%")},
-	}
+	f := (&tidal.Filter{}).
+		Where("name", tidal.Like, "filter-%").
+		OrderBy("name").
+		Limit(2).
+		Offset(1)
 
-	cursor, err := crud.List(tx, filter)
+	cursor, err := crud.List(tx, f)
 	require.NoError(err)
 
 	models, err := cursor.List()

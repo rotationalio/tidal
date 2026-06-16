@@ -1,7 +1,7 @@
-// Package filter builds list-query clauses for filtering, sorting, and pagination.
+// Package filter builds ANSI SQL list-query clauses for filtering, sorting, and pagination.
 //
 // Use [Filter] for WHERE, ORDER BY, LIMIT, and OFFSET. Use [CustomFilter] when you
-// need hand-written SQL (for example GROUP BY).
+// need hand-written SQL (for example GROUP BY or case-insensitive LIKE via LOWER()).
 //
 // Building a composable [Filter] (can use tidal aliases):
 //
@@ -53,6 +53,23 @@ type ListFilter interface {
 // Where builds a grouped WHERE expression inside [Filter.AndGroup] and [Filter.OrGroup].
 type Where = builder.Where
 
+// WhereOp is a comparison operator in a WHERE condition.
+type WhereOp = builder.WhereOp
+
+// WHERE comparison operators.
+const (
+	Eq        = builder.Eq
+	Ne        = builder.Ne
+	Gt        = builder.Gt
+	Lt        = builder.Lt
+	Gte       = builder.Gte
+	Lte       = builder.Lte
+	Like      = builder.Like
+	IsNull    = builder.IsNull
+	IsNotNull = builder.IsNotNull
+	In        = builder.In
+)
+
 //============================================================================
 // Filter Implementation
 //============================================================================
@@ -86,19 +103,63 @@ func (f *Filter) resetCache() {
 //============================================================================
 
 // Calling Where replaces any previously built WHERE clause and starts a new one.
-func (f *Filter) Where(field string, op builder.WhereOp, value any) *Filter {
+func (f *Filter) Where(field string, op WhereOp, value any) *Filter {
 	f.ensureWhere().Set(field, op, value)
 	return f
 }
 
-// Appends an AND condition to the current WHERE clause.
-func (f *Filter) And(field string, op builder.WhereOp, value any) *Filter {
+// And appends a condition joined with AND.
+//
+// To control grouping explicitly, use [Filter.AndGroup].
+//
+// No grouping:
+//
+//	f := (&Filter{})
+//	  .Where("a", Eq, 1)
+//	  .And("b", Eq, 2)
+//	  .Or("c", Eq, 3)
+//
+// Produces: "a = :w1 AND b = :w2 OR c = :w3"
+// SQL evaluates as: (a = :w1 AND b = :w2) OR c = :w3
+//
+// For explicit grouping:
+//
+//	f := (&Filter{})
+//	  .Where("a", Eq, 1)
+//	  .AndGroup(func(w *Where) {
+//	      w.Where("b", Eq, 2).Or("c", Eq, 3)
+//	  })
+//
+// Produces: "a = :w1 AND (b = :w2 OR c = :w3)"
+func (f *Filter) And(field string, op WhereOp, value any) *Filter {
 	f.ensureWhere().And(field, op, value)
 	return f
 }
 
-// Appends an OR condition to the current WHERE clause.
-func (f *Filter) Or(field string, op builder.WhereOp, value any) *Filter {
+// Or appends a condition joined with OR.
+//
+// To control grouping explicitly, use [Filter.OrGroup].
+//
+// No grouping:
+//
+//	f := (&Filter{})
+//	  .Where("a", Eq, 1)
+//	  .Or("b", Eq, 2)
+//	  .And("c", Eq, 3)
+//
+// Produces: "a = :w1 OR b = :w2 AND c = :w3"
+// SQL evaluates as: (a = :w1 OR b = :w2) AND c = :w3
+//
+// For explicit grouping:
+//
+//	f := (&Filter{})
+//	  .Where("a", Eq, 1)
+//	  .OrGroup(func(w *Where) {
+//	      w.Where("b", Eq, 2).And("c", Eq, 3)
+//	  })
+//
+// Produces: "a = :w1 OR (b = :w2 AND c = :w3)"
+func (f *Filter) Or(field string, op WhereOp, value any) *Filter {
 	f.ensureWhere().Or(field, op, value)
 	return f
 }

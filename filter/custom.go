@@ -2,8 +2,7 @@ package filter
 
 import "database/sql"
 
-// Alias for [CustomFilter] for backwards compatibility; use [CustomFilter]
-// instead
+// Deprecated: use [CustomFilter] instead.
 type Clause = CustomFilter
 
 // Implements the [ListFilter] interface; the user must manually construct the

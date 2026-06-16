@@ -15,7 +15,9 @@ const (
 	Gte
 	Lte
 	Like
-	ILike
+	IsNull
+	IsNotNull
+	In
 )
 
 // Returns the operator as a string for ANSI SQL.
@@ -35,8 +37,12 @@ func (op WhereOp) String() string {
 		return "<="
 	case Like:
 		return "LIKE"
-	case ILike:
-		return "ILIKE"
+	case IsNull:
+		return "IS NULL"
+	case IsNotNull:
+		return "IS NOT NULL"
+	case In:
+		return "IN"
 	default:
 		return "unknown"
 	}
