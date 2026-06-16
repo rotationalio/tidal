@@ -242,7 +242,7 @@ func testCRUDRoundTrip[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M], 
 	// --- LIST ---
 	// Uses CRUD List with a manual WHERE clause filter. Expect exactly the row we inserted.
 	// List scans fewer columns than Retrieve (per model's Fields(List)).
-	filter := &tidal.Clause{
+	filter := &tidal.CustomFilter{
 		SQL:  "WHERE id = :id",
 		Args: []sql.NamedArg{modelID(s.T(), created)},
 	}
