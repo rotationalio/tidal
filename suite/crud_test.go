@@ -34,7 +34,7 @@ func TestValuesForScan(t *testing.T) {
 
 	t.Run("RetrieveFieldsOrder", func(t *testing.T) {
 		// Full-row operations return values in Fields(Retrieve) column order.
-		values := valuesForScan(t, m, tidal.Retrieve)
+		values := valuesForScan(t, m, tidal.Retrieve, m.Fields(tidal.Retrieve))
 		require.Equal(t, []any{uid, "/v1/items", other, seen, created, modified}, values)
 	})
 
@@ -42,16 +42,68 @@ func TestValuesForScan(t *testing.T) {
 		// Params(Update) overlays Create — only update columns appear, in Fields(Update) order.
 		updated := modified.Add(24 * time.Hour)
 		m.Modified = updated
-		values := valuesForScan(t, m, tidal.Update)
+		values := valuesForScan(t, m, tidal.Update, m.Fields(tidal.Update))
 		require.Equal(t, []any{uid, "/v1/items", updated}, values)
+	})
+
+	t.Run("UpdateRetrieveColumns", func(t *testing.T) {
+		// When Scan(Update) reads Retrieve shape, values must still map by column name.
+		values := valuesForScan(t, m, tidal.Update, m.Fields(tidal.Retrieve))
+		require.Equal(t, []any{uid, "/v1/items", other, seen, created, m.Modified}, values)
 	})
 
 	t.Run("MissingParamFails", func(t *testing.T) {
 		// A column in Fields with no matching Params entry is a model bug; helper must fail.
 		cap := &fatalCapture{T: t}
-		valuesForScan(cap, &brokenScanModel{}, tidal.Retrieve)
-		require.Contains(t, cap.msg, `missing value for Fields(Retrieve) entry "missing_col"`)
+		valuesForScan(cap, &brokenScanModel{}, tidal.Retrieve, []string{"id", "missing_col"})
+		require.Contains(t, cap.msg, `missing value for Scan(Retrieve) column "missing_col"`)
 	})
+}
+
+//============================================================================
+// columnsForScan
+//============================================================================
+
+// Verifies [columnsForScan] selects explicit overrides before default heuristics.
+func TestColumnsForScan(t *testing.T) {
+	m := &scanHelperModel{}
+
+	t.Run("ExplicitOverride", func(t *testing.T) {
+		columns := columnsForScan(t, m, tidal.Update, map[tidal.Operation][]string{
+			tidal.Update: {"id", "url_path", "modified"},
+		})
+		require.Equal(t, []string{"id", "url_path", "modified"}, columns)
+	})
+
+	t.Run("UpdateHeuristicFallback", func(t *testing.T) {
+		columns := columnsForScan(t, m, tidal.Update, nil)
+		require.Equal(t, m.Fields(tidal.Retrieve), columns)
+	})
+
+	t.Run("NonUpdateUsesOperationFields", func(t *testing.T) {
+		columns := columnsForScan(t, m, tidal.Retrieve, nil)
+		require.Equal(t, m.Fields(tidal.Retrieve), columns)
+	})
+
+	t.Run("EmptyOverrideFails", func(t *testing.T) {
+		cap := &fatalCapture{T: t}
+		columnsForScan(cap, m, tidal.Retrieve, map[tidal.Operation][]string{
+			tidal.Retrieve: {},
+		})
+		require.Contains(t, cap.msg, "ScanColumns(Retrieve) must not be empty")
+	})
+}
+
+//============================================================================
+// scanOps
+//============================================================================
+
+// Verifies [scanOps] returns defaults and respects explicit overrides.
+func TestScanOps(t *testing.T) {
+	require.Equal(t, []tidal.Operation{tidal.Create, tidal.Retrieve, tidal.Update}, scanOps(nil))
+
+	custom := []tidal.Operation{tidal.Retrieve}
+	require.Equal(t, custom, scanOps(custom))
 }
 
 //============================================================================
@@ -92,15 +144,19 @@ func TestFieldByColumn(t *testing.T) {
 
 	v := reflect.ValueOf(m).Elem()
 
-	fv, ok := fieldByColumn(t, v, "url_path")
+	fv, ok := fieldByColumn(t, v, "url_path", nil)
 	require.True(t, ok)
 	require.Equal(t, "/x", fv.String())
 
-	fv, ok = fieldByColumn(t, v, "id")
+	fv, ok = fieldByColumn(t, v, "id", nil)
 	require.True(t, ok)
 	require.Equal(t, uid, fv.Interface())
 
-	_, ok = fieldByColumn(t, v, "no_such_column")
+	fv, ok = fieldByColumn(t, v, "resource_path", map[string]string{"resource_path": "URLPath"})
+	require.True(t, ok)
+	require.Equal(t, "/x", fv.String())
+
+	_, ok = fieldByColumn(t, v, "no_such_column", nil)
 	require.False(t, ok)
 }
 
@@ -126,8 +182,8 @@ func TestEqualListFields(t *testing.T) {
 		UserID:    other,
 	}
 
-	require.True(t, equalListFields(t, a, b, a.Fields(tidal.List), nil))
-	require.False(t, equalListFields(t, a, &scanHelperModel{URLPath: "/b", UserID: other}, a.Fields(tidal.List), nil))
+	require.True(t, equalListFields(t, a, b, a.Fields(tidal.List), nil, nil))
+	require.False(t, equalListFields(t, a, &scanHelperModel{URLPath: "/b", UserID: other}, a.Fields(tidal.List), nil, nil))
 }
 
 // Verifies list-field comparisons delegate to cfg.Equal when provided.
@@ -152,8 +208,30 @@ func TestEqualListFieldsUsesCustomEqual(t *testing.T) {
 		return true
 	}
 
-	require.True(t, equalListFields(t, a, b, a.Fields(tidal.List), customEqual))
+	require.True(t, equalListFields(t, a, b, a.Fields(tidal.List), customEqual, nil))
 	require.True(t, called, "custom equal should be used for list comparisons")
+}
+
+// Verifies [equalListFields] applies FieldMap column-to-field translations.
+func TestEqualListFieldsUsesFieldMap(t *testing.T) {
+	uid := ulid.MustParse("01KTESYNDPVTRWK05N2TXFKGQZ")
+
+	a := &scanHelperModel{
+		BaseModel: tidal.BaseModel{ID: uid},
+		URLPath:   "/same",
+	}
+	b := &scanHelperModel{
+		BaseModel: tidal.BaseModel{ID: uid},
+		URLPath:   "/same",
+	}
+	c := &scanHelperModel{
+		BaseModel: tidal.BaseModel{ID: uid},
+		URLPath:   "/different",
+	}
+
+	fieldMap := map[string]string{"resource_path": "URLPath"}
+	require.True(t, equalListFields(t, a, b, []string{"resource_path"}, nil, fieldMap))
+	require.False(t, equalListFields(t, a, c, []string{"resource_path"}, nil, fieldMap))
 }
 
 // Verifies equalValues uses field-type Equal semantics for array and JSON wrappers.
@@ -248,6 +326,14 @@ type fatalCapture struct {
 	*testing.T
 	msg string
 }
+
+// Errorf captures require-formatted errors for helper failure-path assertions.
+func (f *fatalCapture) Errorf(format string, args ...any) {
+	f.msg = fmt.Sprintf(format, args...)
+}
+
+// FailNow is a no-op so helper failures can be asserted in tests.
+func (f *fatalCapture) FailNow() {}
 
 // Fatal captures fatal messages without stopping the test process.
 func (f *fatalCapture) Fatal(args ...any) {

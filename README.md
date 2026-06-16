@@ -423,6 +423,28 @@ Per-test teardown defaults to truncating tables (`TeardownTruncate`) for fast in
 
 Provide `Equal` when the default comparison is not enough (for example JSON fields that need normalization). Otherwise the suite compares list results on the `Fields(List)` column subset and tolerates database timestamp truncation (compares times to the second).
 
+Use these optional `CRUDConformance` fields when your model scan shape differs from default assumptions:
+
+- `ScanColumns map[tidal.Operation][]string` — override the exact columns fed into `Scan(op)` in Scan conformance.
+- `ScanOps []tidal.Operation` — limit which operations Scan conformance runs (default: `Create`, `Retrieve`, `Update`).
+- `FieldMap map[string]string` — map DB column name -> Go struct field name when snake_case matching is not enough (for acronyms like `client_id` -> `ClientID`, etc.).
+
+When `ScanColumns` is not set for `Update`, conformance falls back to `Fields(Retrieve)` if `Update` is a strict subset of retrieve columns; this matches models where `Scan(Update)` reads full-row projections.
+
+```go
+suite.ConformsCRUD(&s.DatabaseSuite, suite.CRUDConformance[*APIKey]{
+ Table:  "api_keys",
+ Create: newAPIKey,
+ Update: func(k *APIKey) { k.Description = sql.NullString{Valid: true, String: "updated"} },
+ FieldMap: map[string]string{
+  "client_id": "ClientID",
+ },
+ ScanColumns: map[tidal.Operation][]string{
+  tidal.Update: {"id", "description", "client_id", "secret", "created_by", "last_seen", "revoked", "created", "modified"},
+ },
+})
+```
+
 For simple schema setup in tests, use [`suite/fixtures`](https://pkg.go.dev/go.rtnl.ai/tidal/suite/fixtures) instead of full migrations:
 
 ```go
@@ -444,19 +466,19 @@ go test ./... -race
 go test ./... -count=1 -race -v
 ```
 
-The bind parser has a benchmark regression guard (`TestRewriteBenchmarkRegression` in `bind`). It fails when `bind/testdata/rewrite_benchmark_baseline.json` is missing or when any benchmark case is more than 10% slower than baseline.
-
-To re-benchmark after intentional parser changes:
+To benchmark bind rewrite performance:
 
 ```bash
-go test ./bind -run '^$' -bench BenchmarkRewrite -benchmem -count=5
+go test ./bind -run '^$' -bench '^BenchmarkRewrite$' -benchmem -count=1
 ```
 
-Then update `bind/testdata/rewrite_benchmark_baseline.json` `ns_per_op` values from the new results and verify:
+Last observed benchmark on darwin/arm64 (Apple M2):
 
-```bash
-go test ./bind -run TestRewriteBenchmarkRegression -count=1
-```
+| Case | ns/op | B/op | allocs/op |
+| --- | ---: | ---: | ---: |
+| OrderedSimple | 937.9 | 198 | 6 |
+| OrderedComplex | 1407 | 308 | 5 |
+| PositionalSimple | 549.4 | 256 | 4 |
 
 SQLite tests need no setup. Each test suite creates its own database file in a temporary directory.
 
