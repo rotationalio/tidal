@@ -1,4 +1,4 @@
-package tidal
+package bind
 
 import (
 	"database/sql"

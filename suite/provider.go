@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"go.rtnl.ai/tidal"
+	"go.rtnl.ai/tidal/conn"
 	"go.rtnl.ai/x/dsn"
 )
 
@@ -28,8 +28,8 @@ type Provider interface {
 
 	// Managing tables for tests. This is not used by the DatabaseSuite itself, but
 	// the user can use it to override how the database is reset for tests.
-	DropTables(ctx context.Context, conn *tidal.DB) error
-	TruncateTables(ctx context.Context, conn *tidal.DB) error
+	DropTables(ctx context.Context, conn *conn.DB) error
+	TruncateTables(ctx context.Context, conn *conn.DB) error
 
 	// Helper for counting the number of rows in a table, which users can use to make
 	// assertions about the database state.
@@ -38,5 +38,5 @@ type Provider interface {
 
 // Migrations are used to ensure the database meets a set schema.
 type Migrations interface {
-	Apply(ctx context.Context, db *tidal.DB, version string) error
+	Apply(ctx context.Context, db conn.Beginner, version string) error
 }

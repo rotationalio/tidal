@@ -21,7 +21,7 @@ type TidalTestSuite struct {
 // Postgres Tests
 //============================================================================
 
-//go:embed testdata/postgres
+//go:embed suite/testdata/postgres
 var postgresFS embed.FS
 
 func TestPostgres(t *testing.T) {
@@ -41,7 +41,7 @@ func TestPostgres(t *testing.T) {
 // SQLite Tests
 //============================================================================
 
-//go:embed testdata/sqlite
+//go:embed suite/testdata/sqlite
 var sqliteFS embed.FS
 
 func TestSQLite3(t *testing.T) {

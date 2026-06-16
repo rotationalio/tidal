@@ -8,6 +8,23 @@
 
 Tidal provides internal mechanisms for managing SQL databases in Rotational applications. It provides a migrations mechanism for storing schema versions inside the database and automatically applying schema changes. It also provides a CRUD and Model interface for use with direct SQL statements rather than ORM functionality. Tidal is not meant to be generally used but implements the Rotational SQL pattern.
 
+Import [`go.rtnl.ai/tidal`](https://pkg.go.dev/go.rtnl.ai/tidal) in application code. The root package re-exports the API (`tidal.Open`, `tidal.New`, `tidal.CRUD`, and so on). Subpackages are public when you need a narrower import.
+
+## Packages
+
+| Import | Purpose |
+| --- | --- |
+| [`go.rtnl.ai/tidal`](https://pkg.go.dev/go.rtnl.ai/tidal) | Main entry point — re-exports connections, models, filters, and CRUD |
+| [`go.rtnl.ai/tidal/conn`](https://pkg.go.dev/go.rtnl.ai/tidal/conn) | `DB`, `Tx`, `Open`, `Wrap`, [`Beginner`](https://pkg.go.dev/go.rtnl.ai/tidal/conn#Beginner) |
+| [`go.rtnl.ai/tidal/model`](https://pkg.go.dev/go.rtnl.ai/tidal/model) | `Model`, `BaseModel`, `Operation` |
+| [`go.rtnl.ai/tidal/filter`](https://pkg.go.dev/go.rtnl.ai/tidal/filter) | `Filter`, `Clause`, list-query pagination |
+| [`go.rtnl.ai/tidal/store`](https://pkg.go.dev/go.rtnl.ai/tidal/store) | `CRUD`, `Cursor`, query generation |
+| [`go.rtnl.ai/tidal/bind`](https://pkg.go.dev/go.rtnl.ai/tidal/bind) | `:name` placeholder rewriting |
+| [`go.rtnl.ai/tidal/migrations`](https://pkg.go.dev/go.rtnl.ai/tidal/migrations) | Versioned SQL schema migrations |
+| [`go.rtnl.ai/tidal/fields`](https://pkg.go.dev/go.rtnl.ai/tidal/fields) | JSON and string-array column types for `Model` structs |
+| [`go.rtnl.ai/tidal/suite`](https://pkg.go.dev/go.rtnl.ai/tidal/suite) | Database test harness, `ConformsCRUD`, shared `testdata`, and integration tests |
+| [`go.rtnl.ai/tidal/suite/fixtures`](https://pkg.go.dev/go.rtnl.ai/tidal/suite/fixtures) | SQL fixture loader for test suites (`fixtures.File`) |
+
 ## Connecting
 
 Use [`tidal.Open`](https://pkg.go.dev/go.rtnl.ai/tidal#Open) to connect to a supported database. Pass a [`*dsn.DSN`](https://pkg.go.dev/go.rtnl.ai/x/dsn#DSN) from `go.rtnl.ai/x/dsn` (typically parsed from `DATABASE_URL`):
@@ -62,7 +79,7 @@ _, err = tx.Exec(
 
 Pass `tidal.Tx` to [`CRUD`](https://pkg.go.dev/go.rtnl.ai/tidal#CRUD) methods and [`Rows`](https://pkg.go.dev/go.rtnl.ai/tidal#Rows) cursors.
 
-When you need a raw `*sql.DB` — for migrations, third-party libraries, or admin DDL — use the embedded connection: `db.DB`.
+When you need a raw `*sql.DB` — for migrations, third-party libraries, or admin DDL — use the embedded connection (`db.DB`) or [`DB.SQLDB`](https://pkg.go.dev/go.rtnl.ai/tidal#DB.SQLDB).
 
 If you already have an open `*sql.DB`, wrap it with [`tidal.Wrap`](https://pkg.go.dev/go.rtnl.ai/tidal#Wrap). You still need a parsed `*dsn.DSN` so tidal knows which placeholder style to use:
 
@@ -153,7 +170,7 @@ func Migrations() (migrations.Migrations, error) {
 
 Call `Apply` (or `ApplyPostgres` / `ApplySQLite` directly) after connecting with `tidal.Open`. These methods create the `migrations` bookkeeping table if it does not exist, look up the last applied migration ID, and apply only migrations with a higher ID. The `version` string you pass is recorded alongside each migration so you can tell which release applied a given schema change.
 
-Pass your `*tidal.DB` connection to `Apply`:
+`Apply` and `LastApplied` accept any value that implements [`tidal.Beginner`](https://pkg.go.dev/go.rtnl.ai/tidal#Beginner) — typically your `*tidal.DB` from `tidal.Open`:
 
 ```go
 ctx := context.Background()
@@ -401,6 +418,16 @@ func (s *ModelTestSuite) TestUserCRUDConformance() {
 `Create` should return a valid insert each time — generate unique values (email, slug, etc.) inside the factory. `Update` receives the same instance that was created and inserted.
 
 Provide `Equal` when the default comparison is not enough (for example JSON fields that need normalization). Otherwise the suite compares list results on the `Fields(List)` column subset and tolerates database timestamp truncation (compares times to the second).
+
+For simple schema setup in tests, use [`suite/fixtures`](https://pkg.go.dev/go.rtnl.ai/tidal/suite/fixtures) instead of full migrations:
+
+```go
+import "go.rtnl.ai/tidal/suite/fixtures"
+
+s.Migrations = fixtures.File("fields/sqlite_schema.sql")
+```
+
+SQL files live under `suite/testdata/` in this repository.
 
 ## Testing
 

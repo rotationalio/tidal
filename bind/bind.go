@@ -1,4 +1,21 @@
-package tidal
+// Package bind rewrites canonical :name SQL and named arguments for database drivers.
+//
+// Tidal transactions accept :name placeholders regardless of backend. This package
+// converts them to the style the driver expects ($1 for Postgres, named for SQLite, etc.).
+//
+// Example:
+//
+//	query := "INSERT INTO users (id, email) VALUES (:id, :email)"
+//	args := []sql.NamedArg{
+//		sql.Named("id", id),
+//		sql.Named("email", email),
+//	}
+//	bound, err := bind.Rewrite(query, args, bind.Ordered)
+//	if err != nil {
+//		return err
+//	}
+//	// bound.SQL() => "INSERT INTO users (id, email) VALUES ($1, $2)"
+package bind
 
 import (
 	"database/sql"

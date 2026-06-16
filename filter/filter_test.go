@@ -1,4 +1,4 @@
-package tidal
+package filter
 
 import (
 	"testing"

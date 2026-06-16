@@ -1,4 +1,33 @@
-package tidal
+// Package model defines the [Model] interface and shared base types for CRUD stores.
+//
+// Implement [Model] on your structs and embed [BaseModel] for ULID ids and timestamps.
+//
+// Example:
+//
+//	type User struct {
+//		model.BaseModel
+//		Name  string
+//		Email string
+//	}
+//
+//	func (u *User) Fields(op model.Operation) []string {
+//		return []string{"id", "name", "email", "created", "modified"}
+//	}
+//
+//	func (u *User) Params(op model.Operation) []sql.NamedArg {
+//		return []sql.NamedArg{
+//			sql.Named("id", u.ID),
+//			sql.Named("name", u.Name),
+//			sql.Named("email", u.Email),
+//			sql.Named("created", u.Created),
+//			sql.Named("modified", u.Modified),
+//		}
+//	}
+//
+//	func (u *User) Scan(op model.Operation, s model.Scanner) error {
+//		return s.Scan(&u.ID, &u.Name, &u.Email, &u.Created, &u.Modified)
+//	}
+package model
 
 import (
 	"database/sql"

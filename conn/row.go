@@ -1,4 +1,4 @@
-package tidal
+package conn
 
 import "database/sql"
 

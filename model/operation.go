@@ -1,4 +1,4 @@
-package tidal
+package model
 
 // Operation identifies which CRUD step a [Model] method is serving.
 type Operation uint8
