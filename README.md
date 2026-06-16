@@ -444,6 +444,20 @@ go test ./... -race
 go test ./... -count=1 -race -v
 ```
 
+The bind parser has a benchmark regression guard (`TestRewriteBenchmarkRegression` in `bind`). It fails when `bind/testdata/rewrite_benchmark_baseline.json` is missing or when any benchmark case is more than 10% slower than baseline.
+
+To re-benchmark after intentional parser changes:
+
+```bash
+go test ./bind -run '^$' -bench BenchmarkRewrite -benchmem -count=5
+```
+
+Then update `bind/testdata/rewrite_benchmark_baseline.json` `ns_per_op` values from the new results and verify:
+
+```bash
+go test ./bind -run TestRewriteBenchmarkRegression -count=1
+```
+
 SQLite tests need no setup. Each test suite creates its own database file in a temporary directory.
 
 ```bash

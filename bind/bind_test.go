@@ -132,4 +132,113 @@ func TestRewrite(t *testing.T) {
 		require.Equal(t, "SELECT * FROM t WHERE id::text = $1", b.SQL())
 		require.Equal(t, []any{"abc"}, b.Args())
 	})
+
+	t.Run("TimestampLiteralIsNotAPlaceholder", func(t *testing.T) {
+		query := "INSERT INTO events (created_at, note) VALUES ('2026-01-01T12:34:56Z', :note)"
+		b, err := Rewrite(
+			query,
+			[]sql.NamedArg{sql.Named("note", "ok")},
+			Ordered,
+		)
+		require.NoError(t, err)
+		require.Equal(t,
+			"INSERT INTO events (created_at, note) VALUES ('2026-01-01T12:34:56Z', $1)",
+			b.SQL(),
+		)
+		require.Equal(t, []any{"ok"}, b.Args())
+	})
+
+	t.Run("LiteralAndNamedMix", func(t *testing.T) {
+		b, err := Rewrite(
+			"SELECT * FROM events WHERE created_at = '2026-01-01T12:34:56Z' AND id = :id",
+			[]sql.NamedArg{sql.Named("id", "evt_123")},
+			Ordered,
+		)
+		require.NoError(t, err)
+		require.Equal(t,
+			"SELECT * FROM events WHERE created_at = '2026-01-01T12:34:56Z' AND id = $1",
+			b.SQL(),
+		)
+		require.Equal(t, []any{"evt_123"}, b.Args())
+	})
+
+	t.Run("EscapedQuoteInsideStringLiteral", func(t *testing.T) {
+		b, err := Rewrite(
+			"SELECT * FROM notes WHERE note = 'it''s 12:34' AND id = :id",
+			[]sql.NamedArg{sql.Named("id", 42)},
+			Ordered,
+		)
+		require.NoError(t, err)
+		require.Equal(t,
+			"SELECT * FROM notes WHERE note = 'it''s 12:34' AND id = $1",
+			b.SQL(),
+		)
+		require.Equal(t, []any{42}, b.Args())
+	})
+
+	t.Run("LineCommentSkipsPlaceholderParsing", func(t *testing.T) {
+		b, err := Rewrite(
+			"SELECT :id -- :ignored\nWHERE id = :id",
+			[]sql.NamedArg{sql.Named("id", 7)},
+			Ordered,
+		)
+		require.NoError(t, err)
+		require.Equal(t, "SELECT $1 -- :ignored\nWHERE id = $1", b.SQL())
+		require.Equal(t, []any{7}, b.Args())
+	})
+
+	t.Run("BlockCommentSkipsPlaceholderParsing", func(t *testing.T) {
+		b, err := Rewrite(
+			"SELECT /* :ignored */ :id",
+			[]sql.NamedArg{sql.Named("id", 9)},
+			Ordered,
+		)
+		require.NoError(t, err)
+		require.Equal(t, "SELECT /* :ignored */ $1", b.SQL())
+		require.Equal(t, []any{9}, b.Args())
+	})
+
+	t.Run("PostgresDollarQuotedStringSkipsPlaceholderParsing", func(t *testing.T) {
+		b, err := Rewrite(
+			"SELECT $$:ignored$$, :id",
+			[]sql.NamedArg{sql.Named("id", 11)},
+			Ordered,
+		)
+		require.NoError(t, err)
+		require.Equal(t, "SELECT $$:ignored$$, $1", b.SQL())
+		require.Equal(t, []any{11}, b.Args())
+	})
+
+	t.Run("PostgresTaggedDollarQuotedStringSkipsPlaceholderParsing", func(t *testing.T) {
+		b, err := Rewrite(
+			"SELECT $tag$:ignored$tag$, :id",
+			[]sql.NamedArg{sql.Named("id", 12)},
+			Ordered,
+		)
+		require.NoError(t, err)
+		require.Equal(t, "SELECT $tag$:ignored$tag$, $1", b.SQL())
+		require.Equal(t, []any{12}, b.Args())
+	})
+
+	t.Run("PostgresEscapedStringSkipsPlaceholderParsing", func(t *testing.T) {
+		b, err := Rewrite(
+			"SELECT E'it\\':ignored' AS note, :id",
+			[]sql.NamedArg{sql.Named("id", 13)},
+			Ordered,
+		)
+		require.NoError(t, err)
+		require.Equal(t, "SELECT E'it\\':ignored' AS note, $1", b.SQL())
+		require.Equal(t, []any{13}, b.Args())
+	})
+
+	t.Run("PlaceholderMustStartWithLetterOrUnderscore", func(t *testing.T) {
+		b, err := Rewrite(
+			"SELECT :123 AS raw, :id AS bound",
+			[]sql.NamedArg{sql.Named("id", 42)},
+			Ordered,
+		)
+		require.NoError(t, err)
+		require.Equal(t, "SELECT :123 AS raw, $1 AS bound", b.SQL())
+		require.Equal(t, []any{42}, b.Args())
+	})
 }
