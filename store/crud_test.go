@@ -1,10 +1,10 @@
 package store_test
 
 import (
-	"database/sql"
 	"fmt"
 
 	"go.rtnl.ai/tidal"
+	"go.rtnl.ai/tidal/store"
 	"go.rtnl.ai/tidal/suite/fixtures"
 	"go.rtnl.ai/ulid"
 )
@@ -43,8 +43,7 @@ func (s *StoreTestSuite) TestUpdateValidation() {
 // List + Filter
 //============================================================================
 
-// Exercises [tidal.Filter] ORDER BY / LIMIT / OFFSET against a real database.
-// WHERE scoping is supplied via [tidal.Clause] until Filter grows WHERE support.
+// Exercises [tidal.Filter] WHERE, ORDER BY, LIMIT, and OFFSET against a real database.
 func (s *StoreTestSuite) TestListFilter() {
 	require := s.Require()
 	crud := tidal.New[*fixtures.User]("users")
@@ -61,13 +60,13 @@ func (s *StoreTestSuite) TestListFilter() {
 		require.NoError(err)
 	}
 
-	f := (&tidal.Filter{}).OrderBy("name").Limit(2).Offset(1)
-	filter := &tidal.Clause{
-		SQL:  "WHERE name LIKE :pattern " + f.Clause(),
-		Args: []sql.NamedArg{sql.Named("pattern", "filter-%")},
-	}
+	f := (&tidal.Filter{}).
+		Where("name", tidal.Like, "filter-%").
+		OrderBy("name").
+		Limit(2).
+		Offset(1)
 
-	cursor, err := crud.List(tx, filter)
+	cursor, err := crud.List(tx, f)
 	require.NoError(err)
 
 	models, err := cursor.List()
@@ -93,7 +92,7 @@ func (s *StoreTestSuite) TestCursorCloseRollsBackTx() {
 	rows, err := tx.Query("SELECT " + joinFields(user.Fields(tidal.List)) + " FROM users LIMIT 1")
 	require.NoError(err)
 
-	cursor := tidal.Rows[*fixtures.User](tx, rows)
+	cursor := store.Rows[*fixtures.User](tx, rows)
 	require.NoError(cursor.Close())
 
 	_, err = tx.Exec("SELECT 1")
@@ -110,7 +109,7 @@ func (s *StoreTestSuite) TestCursorCloseRowsDoesNotRollBackTx() {
 	rows, err := tx.Query("SELECT " + joinFields(user.Fields(tidal.List)) + " FROM users LIMIT 1")
 	require.NoError(err)
 
-	cursor := tidal.Rows[*fixtures.User](tx, rows)
+	cursor := store.Rows[*fixtures.User](tx, rows)
 	require.NoError(cursor.CloseRows())
 
 	_, err = tx.Exec("SELECT 1")

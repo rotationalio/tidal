@@ -1,23 +1,43 @@
-// Package filter builds list-query clauses for sorting and pagination.
+// Package filter builds ANSI SQL list-query clauses for filtering, sorting, and pagination.
 //
-// Use [Filter] for ORDER BY, LIMIT, and OFFSET. Combine with [Clause] for WHERE
-// conditions.
+// Use [Filter] for WHERE, ORDER BY, LIMIT, and OFFSET. Use [CustomFilter] when you
+// need hand-written SQL (for example GROUP BY or case-insensitive LIKE via LOWER()).
 //
-// Example:
+// Building a composable [Filter] (can use tidal aliases):
 //
-//	f := (&filter.Filter{}).OrderBy("-created").Limit(20)
-//	listFilter := &filter.Clause{
-//		SQL:  "WHERE status = :status " + f.Clause(),
-//		Args: []sql.NamedArg{sql.Named("status", "active")},
+//	f := (&tidal.Filter{}).
+//		Where("status", tidal.Eq, "active").
+//		AndGroup(func(g *tidal.Where) {
+//			g.Where("role", tidal.Eq, "admin").
+//				Or("role", tidal.Eq, "editor").
+//				Or("role", tidal.Eq, "viewer")
+//		}).
+//		OrderBy("-created").
+//		Limit(20)
+//	cursor, err := crud.List(tx, f)
+//
+// [CustomFilter] combined with [Filter] when you need custom SQL (for example
+// GROUP BY, which requires 2 [Filter] clauses to construct the SQL):
+//
+//	where := (&tidal.Filter{}).Where("status", tidal.Eq, "active")
+//	rest := (&tidal.Filter{}).OrderBy("-created").Limit(20)
+//	listFilter := &tidal.CustomFilter{
+//		SQL:  where.Clause() + " GROUP BY role " + rest.Clause(),
+//		Args: where.Params(),
 //	}
 //	cursor, err := crud.List(tx, listFilter)
 package filter
 
 import (
 	"database/sql"
-	"fmt"
 	"strings"
+
+	"go.rtnl.ai/tidal/filter/builder"
 )
+
+//============================================================================
+// ListFilter Interface
+//============================================================================
 
 // ListFilters are an interface that allows for the construction of complex queries
 // for listing models that include filtering, sorting, limiting and pagination.
@@ -30,33 +50,153 @@ type ListFilter interface {
 	Params() []sql.NamedArg
 }
 
-// Clause is a manual filtering mechanism that implements the ListFilter interface, but
-// requires the user to manually construct the SQL clause and parameters.
-type Clause struct {
-	SQL  string
-	Args []sql.NamedArg
-}
+// Where builds a grouped WHERE expression inside [Filter.AndGroup] and [Filter.OrGroup].
+type Where = builder.Where
 
-func (c *Clause) Clause() string {
-	return c.SQL
-}
+// WhereOp is a comparison operator in a WHERE condition.
+type WhereOp = builder.WhereOp
 
-func (c *Clause) Params() []sql.NamedArg {
-	return c.Args
-}
+// WHERE comparison operators.
+const (
+	Eq        = builder.Eq
+	Ne        = builder.Ne
+	Gt        = builder.Gt
+	Lt        = builder.Lt
+	Gte       = builder.Gte
+	Lte       = builder.Lte
+	Like      = builder.Like
+	IsNull    = builder.IsNull
+	IsNotNull = builder.IsNotNull
+	In        = builder.In
+)
 
-// Simple Filter that implements the ListFilter interface. This filter does not perform
-// any constraint or database-specific checks before returning the SQL clause, so may
-// not be suitable for all database backends. It ensures that an ANSI SQL clause is
-// returned and that the parameters in the query are in the correct order.
-//
-// TODO: Handle WHERE clauses.
+//============================================================================
+// Filter Implementation
+//============================================================================
+
+// Implements the [ListFilter] interface. This filter does not perform any
+// constraint or database-specific checks before returning the SQL clause, so
+// may not be suitable for all database backends. It ensures that an ANSI SQL
+// clause is returned and that the parameters in the query are in the correct
+// order and named.
 type Filter struct {
-	limit    *Limit
-	offset   *Offset
-	ordering Ordering
-	params   []sql.NamedArg
+	// Clauses
+
+	whereClause *builder.Where
+	limit       *builder.Limit
+	offset      *builder.Offset
+	ordering    builder.Ordering
+
+	// Cache; use f.resetCache() to clear whenever the filter is modified.
+
+	sql    string
+	params []sql.NamedArg
 }
+
+func (f *Filter) resetCache() {
+	f.sql = ""
+	f.params = nil
+}
+
+//============================================================================
+// Where Building Methods
+//============================================================================
+
+// Calling Where replaces any previously built WHERE clause and starts a new one.
+func (f *Filter) Where(field string, op WhereOp, value any) *Filter {
+	f.ensureWhere().Set(field, op, value)
+	return f
+}
+
+// And appends a condition joined with AND.
+//
+// To control grouping explicitly, use [Filter.AndGroup].
+//
+// No grouping:
+//
+//	f := (&Filter{})
+//	  .Where("a", Eq, 1)
+//	  .And("b", Eq, 2)
+//	  .Or("c", Eq, 3)
+//
+// Produces: "a = :w1 AND b = :w2 OR c = :w3"
+// SQL evaluates as: (a = :w1 AND b = :w2) OR c = :w3
+//
+// For explicit grouping:
+//
+//	f := (&Filter{})
+//	  .Where("a", Eq, 1)
+//	  .AndGroup(func(w *Where) {
+//	      w.Where("b", Eq, 2).Or("c", Eq, 3)
+//	  })
+//
+// Produces: "a = :w1 AND (b = :w2 OR c = :w3)"
+func (f *Filter) And(field string, op WhereOp, value any) *Filter {
+	f.ensureWhere().And(field, op, value)
+	return f
+}
+
+// Or appends a condition joined with OR.
+//
+// To control grouping explicitly, use [Filter.OrGroup].
+//
+// No grouping:
+//
+//	f := (&Filter{})
+//	  .Where("a", Eq, 1)
+//	  .Or("b", Eq, 2)
+//	  .And("c", Eq, 3)
+//
+// Produces: "a = :w1 OR b = :w2 AND c = :w3"
+// SQL evaluates as: (a = :w1 OR b = :w2) AND c = :w3
+//
+// For explicit grouping:
+//
+//	f := (&Filter{})
+//	  .Where("a", Eq, 1)
+//	  .OrGroup(func(w *Where) {
+//	      w.Where("b", Eq, 2).And("c", Eq, 3)
+//	  })
+//
+// Produces: "a = :w1 OR (b = :w2 AND c = :w3)"
+func (f *Filter) Or(field string, op WhereOp, value any) *Filter {
+	f.ensureWhere().Or(field, op, value)
+	return f
+}
+
+// Appends a parenthesized group joined with AND to the current WHERE clause.
+func (f *Filter) AndGroup(fn func(*Where)) *Filter {
+	f.ensureWhere().AndGroup(fn)
+	return f
+}
+
+// Appends a parenthesized group joined with OR to the current WHERE clause.
+func (f *Filter) OrGroup(fn func(*Where)) *Filter {
+	f.ensureWhere().OrGroup(fn)
+	return f
+}
+
+// Ensures that the WHERE clause is initialized and resets the [Filter] cache;
+// if you modify the WHERE clause functionality on [Filter], make sure to call
+// this method or call resetCache() after modifying the [Filter].
+func (f *Filter) ensureWhere() *builder.Where {
+	f.resetCache()
+	if f.whereClause == nil {
+		f.whereClause = &builder.Where{}
+	}
+	return f.whereClause
+}
+
+func (f *Filter) renderWhere() (string, []sql.NamedArg) {
+	if f.whereClause == nil {
+		return "", nil
+	}
+	return f.whereClause.Render()
+}
+
+//============================================================================
+// Ordering Building Methods
+//============================================================================
 
 // Pass in the column names to order by. To clear the ordering pass in an empty slice.
 // Note that the ordering is overwritten if this method is called multiple times.
@@ -66,26 +206,32 @@ type Filter struct {
 // pass in multiple columns, the list will first be ordered by the first column, then by
 // by subsequent columns to break ordering ties.
 func (f *Filter) OrderBy(columns ...string) *Filter {
+	f.resetCache()
 	f.ordering = nil
 	if len(columns) > 0 {
 		for _, column := range columns {
+			direction := builder.OrderASC
 			if strings.HasPrefix(column, "-") {
-				f.ordering = append(f.ordering, OrderBy{field: strings.TrimPrefix(column, "-"), direction: OrderDESC})
-			} else {
-				f.ordering = append(f.ordering, OrderBy{field: column, direction: OrderASC})
+				direction = builder.OrderDESC
 			}
+			f.ordering = append(f.ordering, builder.OrderBy{Column: strings.TrimPrefix(column, "-"), Direction: direction})
 		}
 	}
 	return f
 }
 
+//============================================================================
+// Limit and Offset Building Methods
+//============================================================================
+
 // Adds or overwrites the limit for the filter. To remove a limit already set on a
 // filter pass in n=-1, which will clear the limit.
 func (f *Filter) Limit(n int) *Filter {
+	f.resetCache()
 	if n < 0 {
 		f.limit = nil
 	} else {
-		l := Limit(n)
+		l := builder.Limit(n)
 		f.limit = &l
 	}
 	return f
@@ -94,120 +240,77 @@ func (f *Filter) Limit(n int) *Filter {
 // Adds or overwrites the offset for the filter. To remove an offset already set on a
 // filter pass in n=-1, which will clear the offset.
 func (f *Filter) Offset(n int) *Filter {
+	f.resetCache()
 	if n < 0 {
 		f.offset = nil
 	} else {
-		o := Offset(n)
+		o := builder.Offset(n)
 		f.offset = &o
 	}
 	return f
 }
 
+//============================================================================
+// FilterList Implementation for Filter
+//============================================================================
+
+// Returns the SQL clause string for the filter.
 func (f *Filter) Clause() string {
-	sb := strings.Builder{}
-	concat := false
+	if f.sql == "" {
+		sb := strings.Builder{}
+		concat := false
 
-	if len(f.ordering) > 0 {
-		if concat {
-			sb.WriteString(" ")
+		// Build the WHERE clause.
+		if whereSQL, _ := f.renderWhere(); whereSQL != "" {
+			sb.WriteString(whereSQL)
+			concat = true
 		}
 
-		sb.WriteString(f.ordering.String())
-		concat = true
-	}
+		// Build the ORDER BY clause.
+		if len(f.ordering) > 0 {
+			if concat {
+				sb.WriteString(" ")
+			}
 
-	if f.limit != nil {
-		if concat {
-			sb.WriteString(" ")
+			sb.WriteString(f.ordering.String())
+			concat = true
 		}
 
-		sb.WriteString(f.limit.String())
-		concat = true
-	}
+		// Build the LIMIT clause.
+		if f.limit != nil {
+			if concat {
+				sb.WriteString(" ")
+			}
 
-	if f.offset != nil {
-		if concat {
-			sb.WriteString(" ")
+			sb.WriteString(f.limit.String())
+			concat = true
 		}
 
-		sb.WriteString(f.offset.String())
-	}
+		// Build the OFFSET clause.
+		if f.offset != nil {
+			if concat {
+				sb.WriteString(" ")
+			}
 
-	return sb.String()
+			sb.WriteString(f.offset.String())
+		}
+
+		// Render and cache the SQL clause.
+		f.sql = sb.String()
+	}
+	return f.sql
 }
 
+// Returns the parameters for the filter clause.
 func (f *Filter) Params() []sql.NamedArg {
+	if len(f.params) == 0 {
+		var params []sql.NamedArg
+
+		// Render the WHERE parameters.
+		_, params = f.renderWhere()
+
+		// Cache the parameters.
+		f.params = params
+	}
 	return f.params
-}
-
-//============================================================================
-// Ordering
-//============================================================================
-
-// Ordering is a list of sort columns rendered as an ORDER BY clause.
-type Ordering []OrderBy
-
-func (o Ordering) String() string {
-	sb := strings.Builder{}
-	sb.WriteString("ORDER BY ")
-	for i, order := range o {
-		sb.WriteString(order.String())
-		if i < len(o)-1 {
-			sb.WriteString(", ")
-		}
-	}
-	return sb.String()
-}
-
-// OrderBy is one column and sort direction in an [Ordering].
-type OrderBy struct {
-	field     string
-	direction OrderDirection
-}
-
-func (o OrderBy) String() string {
-	return fmt.Sprintf("%s %s", o.field, o.direction)
-}
-
-// OrderDirection is ASC or DESC in an [OrderBy].
-type OrderDirection uint8
-
-const (
-	OrderASC OrderDirection = iota
-	OrderDESC
-)
-
-func (o OrderDirection) String() string {
-	switch o {
-	case OrderASC:
-		return "ASC"
-	case OrderDESC:
-		return "DESC"
-	default:
-		return "unknown"
-	}
-}
-
-//============================================================================
-// Limit and Offset
-//============================================================================
-
-// Limit is a row cap rendered as a LIMIT clause.
-type Limit int
-
-// Offset is a row skip rendered as an OFFSET clause.
-type Offset int
-
-func (s Limit) String() string {
-	if s >= 0 {
-		return fmt.Sprintf("LIMIT %d", s)
-	}
-	return ""
-}
-
-func (s Offset) String() string {
-	if s >= 0 {
-		return fmt.Sprintf("OFFSET %d", s)
-	}
-	return ""
 }
