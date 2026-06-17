@@ -14,9 +14,13 @@ import (
 // Beginner is implemented by [DB]. Optional tidal packages such as migrations depend
 // on this interface instead of the root tidal facade.
 type Beginner interface {
-	Provider() string
-	BeginTx(ctx context.Context, opts *sql.TxOptions) (Tx, error)
 	SQLDB() *sql.DB
+	Provider() string
+
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (Tx, error)
+	BeginReadTx(ctx context.Context) (Tx, error)
+	WithTx(ctx context.Context, opts *sql.TxOptions, fn func(Tx) error) error
+	WithReadTx(ctx context.Context, fn func(Tx) error) error
 }
 
 var _ Beginner = (*DB)(nil)
@@ -67,11 +71,49 @@ func (db *DB) DSN() *dsn.DSN {
 
 // BeginTx starts a transaction with automatic placeholder binding for this DB's provider.
 func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (Tx, error) {
+	if opts == nil {
+		opts = &sql.TxOptions{
+			ReadOnly: db.dsn.Options.ReadOnly(),
+		}
+	}
+
+	if db.dsn.Options.ReadOnly() && !opts.ReadOnly {
+		return nil, ErrReadOnly
+	}
+
 	tx, err := db.DB.BeginTx(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
 	return newTxn(tx, db.dsn), nil
+}
+
+// BeginReadTx starts a read-only transaction with automatic placeholder binding for this DB's provider.
+func (db *DB) BeginReadTx(ctx context.Context) (Tx, error) {
+	return db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+}
+
+// WithTx runs a function with a transaction for this DB's provider.
+func (db *DB) WithTx(ctx context.Context, opts *sql.TxOptions, fn func(Tx) error) (err error) {
+	var tx Tx
+	if tx, err = db.BeginTx(ctx, opts); err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err = fn(tx); err != nil {
+		return err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// WithReadTx runs a function with a read-only transaction for this DB's provider.
+func (db *DB) WithReadTx(ctx context.Context, fn func(Tx) error) (err error) {
+	return db.WithTx(ctx, &sql.TxOptions{ReadOnly: true}, fn)
 }
 
 // Opens a new database connection to the database described by uri.
