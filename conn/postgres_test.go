@@ -19,6 +19,7 @@ func TestPostgres(t *testing.T) {
 	suite.Run(t, s)
 }
 
+// TestTimestamptzReturnsUTC tests that Postgres timestamptz values are returned as UTC.
 func (s *connSuite) TestTimestamptzReturnsUTC() {
 	s.requirePostgres()
 	require := s.Require()
