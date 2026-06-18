@@ -7,7 +7,6 @@ import (
 
 	"go.rtnl.ai/x/dsn"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -44,10 +43,28 @@ type DB struct {
 // to check liveness and connectivity. The database must be ready before calling
 // Open.
 func Open(ctx context.Context, uri *dsn.DSN) (*DB, error) {
-	sqlDB, err := open(ctx, uri)
+	var (
+		sqlDB *sql.DB
+		err   error
+	)
+
+	switch uri.Provider {
+	case dsn.SQLite3:
+		sqlDB, err = openSQLite3(ctx, uri)
+	case dsn.Postgres:
+		sqlDB, err = openPostgres(ctx, uri, nil)
+	default:
+		return nil, UnsupportedProvider(uri.Provider)
+	}
 	if err != nil {
 		return nil, err
 	}
+
+	if err := sqlDB.PingContext(ctx); err != nil {
+		_ = sqlDB.Close()
+		return nil, errors.Join(ErrPing, err)
+	}
+
 	return Wrap(sqlDB, uri), nil
 }
 
@@ -114,34 +131,4 @@ func (db *DB) WithTx(ctx context.Context, opts *sql.TxOptions, fn func(Tx) error
 // WithReadTx runs a function with a read-only transaction for this DB's provider.
 func (db *DB) WithReadTx(ctx context.Context, fn func(Tx) error) (err error) {
 	return db.WithTx(ctx, &sql.TxOptions{ReadOnly: true}, fn)
-}
-
-// Opens a new database connection to the database described by uri.
-func open(ctx context.Context, uri *dsn.DSN) (db *sql.DB, err error) {
-	switch uri.Provider {
-	case dsn.SQLite3:
-		if db, err = sql.Open("sqlite3", uri.Path); err != nil {
-			return nil, errors.Join(ErrConnect, err)
-		}
-	case dsn.Postgres:
-		connStr, pgopts, err := dsn.PGConnectionOptions(uri, nil)
-		if err != nil {
-			return nil, errors.Join(ErrConnectionOptions, err)
-		}
-		if db, err = sql.Open("pgx", connStr); err != nil {
-			return nil, errors.Join(ErrConnect, err)
-		}
-		db.SetMaxIdleConns(pgopts.MaxIdleConns)
-		db.SetMaxOpenConns(pgopts.MaxOpenConns)
-		db.SetConnMaxLifetime(pgopts.ConnMaxLifetime)
-		db.SetConnMaxIdleTime(pgopts.ConnMaxIdleTime)
-	default:
-		return nil, UnsupportedProvider(uri.Provider)
-	}
-
-	if err = db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		return nil, errors.Join(ErrPing, err)
-	}
-	return db, nil
 }
