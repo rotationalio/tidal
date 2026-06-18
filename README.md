@@ -89,6 +89,39 @@ sqlDB, _ := sql.Open("sqlite3", uri.Path)
 db := tidal.Wrap(sqlDB, uri)
 ```
 
+## Connection options
+
+Connection URLs are parsed by [`go.rtnl.ai/x/dsn`](https://pkg.go.dev/go.rtnl.ai/x/dsn). Query parameters become `DSN.Options` and are handled in one of three ways: consumed by tidal for pool or connection behavior, read from the DSN at runtime, or passed through to the driver unchanged. See the [dsn package docs](https://pkg.go.dev/go.rtnl.ai/x/dsn) for URL format and Postgres libpq parameters (`sslmode`, `connect_timeout`, and so on).
+
+### Shared
+
+| Option | Description |
+| --- | --- |
+| `readonly` | When `true`, [`DB.BeginTx`](https://pkg.go.dev/go.rtnl.ai/tidal#DB.BeginTx) defaults to read-only transactions and rejects writes. |
+
+### Postgres
+
+Tidal opens Postgres through [pgx](https://github.com/jackc/pgx) (`database/sql` stdlib driver).
+
+| Option | Description |
+| --- | --- |
+| `max_idle_conns` | `database/sql` pool setting (default `8`). Removed from the URL before connecting. |
+| `max_open_conns` | `database/sql` pool setting (default `16`). Removed from the URL before connecting. |
+| `conn_max_lifetime` | `database/sql` pool setting (default `1h`). Removed from the URL before connecting. |
+| `conn_max_idle_time` | `database/sql` pool setting (default `30m`). Removed from the URL before connecting. |
+
+All other query parameters are forwarded to Postgres as normal connection options — see [dsn](https://pkg.go.dev/go.rtnl.ai/x/dsn).
+
+On connect, tidal registers a pgx `timestamptz` codec so values scanned into `time.Time` use `time.UTC` as their location (the instant is unchanged). This matches lib/pq behavior and avoids local-timezone surprises in tests and equality checks. Not configurable via DSN yet.
+
+### SQLite3
+
+| Option | Description |
+| --- | --- |
+| `readonly` | Same as above. SQLite read-only mode is enforced at the transaction level. |
+
+The database file path comes from the DSN path (`sqlite3:///path/to/db.sqlite`). Tidal does not set SQLite pragmas on `Open`; run `PRAGMA foreign_keys = on` or `PRAGMA query_only = on` after connect in application code when you need them.
+
 ## CRUD
 
 Implement [`Model`](https://pkg.go.dev/go.rtnl.ai/tidal#Model) on your struct and embed [`BaseModel`](https://pkg.go.dev/go.rtnl.ai/tidal#BaseModel) for ULID ids and timestamps. Build a typed store with [`New`](https://pkg.go.dev/go.rtnl.ai/tidal#New) and run operations inside a transaction:
