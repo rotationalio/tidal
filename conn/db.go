@@ -7,7 +7,7 @@ import (
 
 	"go.rtnl.ai/x/dsn"
 
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -128,7 +128,7 @@ func open(ctx context.Context, uri *dsn.DSN) (db *sql.DB, err error) {
 		if err != nil {
 			return nil, errors.Join(ErrConnectionOptions, err)
 		}
-		if db, err = sql.Open("postgres", connStr); err != nil {
+		if db, err = sql.Open("pgx", connStr); err != nil {
 			return nil, errors.Join(ErrConnect, err)
 		}
 		db.SetMaxIdleConns(pgopts.MaxIdleConns)
