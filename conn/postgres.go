@@ -3,12 +3,12 @@ package conn
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/stdlib"
+	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/x/dsn"
 )
 
@@ -16,12 +16,12 @@ import (
 func openPostgres(_ context.Context, uri *dsn.DSN, defaults map[string]string) (*sql.DB, error) {
 	connStr, pgopts, err := dsn.PGConnectionOptions(uri, defaults)
 	if err != nil {
-		return nil, errors.Join(ErrConnectionOptions, err)
+		return nil, errors.Join(errors.ErrConnectionOptions, err)
 	}
 
 	cfg, err := pgx.ParseConfig(connStr)
 	if err != nil {
-		return nil, errors.Join(ErrConnectionOptions, err)
+		return nil, errors.Join(errors.ErrConnectionOptions, err)
 	}
 
 	// TODO: allow the user to set this option in the future, for now we default to UTC times

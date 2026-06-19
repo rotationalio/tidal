@@ -34,6 +34,7 @@ import (
 	"reflect"
 	"time"
 
+	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/ulid"
 )
 
@@ -130,7 +131,7 @@ func (b *BaseModel) Validate(op Operation) error {
 	switch op {
 	case Update:
 		if b.ID.IsZero() {
-			return ErrMissingID
+			return errors.ErrMissingID
 		}
 	}
 	return nil

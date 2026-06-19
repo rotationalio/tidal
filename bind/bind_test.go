@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.rtnl.ai/tidal/errors"
 )
 
 // Tests that [Rewrite] rewrites :name placeholders for the given placeholder type.
@@ -69,7 +70,7 @@ func TestRewrite(t *testing.T) {
 
 	t.Run("UnknownPlaceholder", func(t *testing.T) {
 		_, err := Rewrite(query, args, UnknownPlaceholder)
-		require.ErrorIs(t, err, ErrUnsupportedPlaceholder, "unknown placeholder type should return an error")
+		require.ErrorIs(t, err, errors.ErrUnsupportedPlaceholder, "unknown placeholder type should return an error")
 	})
 
 	t.Run("MissingArgument", func(t *testing.T) {
@@ -78,9 +79,9 @@ func TestRewrite(t *testing.T) {
 			[]sql.NamedArg{},
 			Ordered,
 		)
-		var missing MissingArgument
+		var missing errors.MissingArgument
 		require.ErrorAs(t, err, &missing)
-		require.Equal(t, MissingArgument("sku"), missing)
+		require.Equal(t, errors.MissingArgument("sku"), missing)
 	})
 
 	// Placeholder Rewriter Edge Cases

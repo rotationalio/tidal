@@ -49,8 +49,8 @@
 package tidal
 
 import (
-	"go.rtnl.ai/tidal/bind"
 	"go.rtnl.ai/tidal/conn"
+	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/tidal/filter"
 	"go.rtnl.ai/tidal/filter/builder"
 	"go.rtnl.ai/tidal/model"
@@ -157,15 +157,15 @@ func New[M Model](table string) *CRUD[M] {
 // Errors
 
 var (
-	ErrMissingID              = model.ErrMissingID
-	ErrNotFound               = store.ErrNotFound
-	ErrUnsupportedPlaceholder = bind.ErrUnsupportedPlaceholder
-	ErrConnectionOptions      = conn.ErrConnectionOptions
-	ErrConnect                = conn.ErrConnect
-	ErrPing                   = conn.ErrPing
+	ErrMissingID              = errors.ErrMissingID
+	ErrNotFound               = errors.ErrNotFound
+	ErrUnsupportedPlaceholder = errors.ErrUnsupportedPlaceholder
+	ErrConnectionOptions      = errors.ErrConnectionOptions
+	ErrConnect                = errors.ErrConnect
+	ErrPing                   = errors.ErrPing
 )
 
 type (
-	UnsupportedProvider = conn.UnsupportedProvider
-	MissingArgument     = bind.MissingArgument
+	UnsupportedProvider = errors.UnsupportedProvider
+	MissingArgument     = errors.MissingArgument
 )

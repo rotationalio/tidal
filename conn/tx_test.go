@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.rtnl.ai/tidal/bind"
 	"go.rtnl.ai/tidal/conn"
+	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/x/dsn"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -31,11 +31,11 @@ func TestTxnBindErrors(t *testing.T) {
 
 	t.Run("Exec", func(t *testing.T) {
 		_, err := tx.Exec("SELECT :x", sql.Named("x", 1))
-		require.ErrorIs(t, err, bind.ErrUnsupportedPlaceholder)
+		require.ErrorIs(t, err, errors.ErrUnsupportedPlaceholder)
 	})
 
 	t.Run("Query", func(t *testing.T) {
 		_, err := tx.Query("SELECT :x", sql.Named("x", 1))
-		require.ErrorIs(t, err, bind.ErrUnsupportedPlaceholder)
+		require.ErrorIs(t, err, errors.ErrUnsupportedPlaceholder)
 	})
 }

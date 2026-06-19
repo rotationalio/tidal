@@ -23,6 +23,7 @@ import (
 	"strings"
 	"unicode"
 
+	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/x/dsn"
 )
 
@@ -55,7 +56,7 @@ func Rewrite(query string, args []sql.NamedArg, ph PlaceholderType) (*BoundQuery
 	case AtP:
 		return rewriteQuery(query, args, atpPlaceholder, true, "")
 	default:
-		return nil, ErrUnsupportedPlaceholder
+		return nil, errors.ErrUnsupportedPlaceholder
 	}
 }
 
@@ -166,7 +167,7 @@ func rewriteQuery(query string, args []sql.NamedArg, ph placeholderFunc, reuseBy
 			if reuseByName {
 				state, ok := stateByName[name]
 				if !ok {
-					return nil, MissingArgument(name)
+					return nil, errors.MissingArgument(name)
 				}
 
 				if state.idx > 0 {
@@ -180,7 +181,7 @@ func rewriteQuery(query string, args []sql.NamedArg, ph placeholderFunc, reuseBy
 			} else {
 				value, ok := byName[name]
 				if !ok {
-					return nil, MissingArgument(name)
+					return nil, errors.MissingArgument(name)
 				}
 
 				values = append(values, value)
