@@ -6,16 +6,14 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.rtnl.ai/tidal/bind"
 	"go.rtnl.ai/tidal/conn"
+	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/x/dsn"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 // QueryRow bind failures return a Row; the error shows up on Scan and Err.
 func TestRowBindError(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := conn.OpenSQLite3(context.Background(), &dsn.DSN{Provider: "sqlite3", Path: ":memory:"})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
@@ -25,6 +23,6 @@ func TestRowBindError(t *testing.T) {
 	t.Cleanup(func() { _ = tx.Rollback() })
 
 	row := tx.QueryRow("SELECT :x", sql.Named("x", 1))
-	require.ErrorIs(t, row.Scan(new(int)), bind.ErrUnsupportedPlaceholder)
-	require.ErrorIs(t, row.Err(), bind.ErrUnsupportedPlaceholder)
+	require.ErrorIs(t, row.Scan(new(int)), errors.ErrUnsupportedPlaceholder)
+	require.ErrorIs(t, row.Err(), errors.ErrUnsupportedPlaceholder)
 }

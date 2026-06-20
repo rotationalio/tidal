@@ -86,7 +86,10 @@ func (s *StoreTestSuite) TestListFilter() {
 func (s *StoreTestSuite) TestCursorCloseRollsBackTx() {
 	require := s.Require()
 
+	// Begin transaction ensuring its rolled back no matter what to prevent other
+	// tests from failing because of a hanging write transaction.
 	tx := s.BeginTx(nil)
+	defer tx.Rollback()
 
 	user := &fixtures.User{}
 	rows, err := tx.Query("SELECT " + joinFields(user.Fields(tidal.List)) + " FROM users LIMIT 1")
@@ -103,7 +106,10 @@ func (s *StoreTestSuite) TestCursorCloseRollsBackTx() {
 func (s *StoreTestSuite) TestCursorCloseRowsDoesNotRollBackTx() {
 	require := s.Require()
 
+	// Begin transaction ensuring its rolled back no matter what to prevent other
+	// tests from failing because of a hanging write transaction.
 	tx := s.BeginTx(nil)
+	defer tx.Rollback()
 
 	user := &fixtures.User{}
 	rows, err := tx.Query("SELECT " + joinFields(user.Fields(tidal.List)) + " FROM users LIMIT 1")

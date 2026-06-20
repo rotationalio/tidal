@@ -3,11 +3,9 @@ package conn
 import (
 	"context"
 	"database/sql"
-	"errors"
 
+	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/x/dsn"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 // Beginner is implemented by [DB]. Optional tidal packages such as migrations depend
@@ -54,7 +52,7 @@ func Open(ctx context.Context, uri *dsn.DSN) (*DB, error) {
 	case dsn.Postgres:
 		sqlDB, err = openPostgres(ctx, uri, nil)
 	default:
-		return nil, UnsupportedProvider(uri.Provider)
+		return nil, errors.UnsupportedProvider(uri.Provider)
 	}
 	if err != nil {
 		return nil, err
@@ -62,7 +60,7 @@ func Open(ctx context.Context, uri *dsn.DSN) (*DB, error) {
 
 	if err := sqlDB.PingContext(ctx); err != nil {
 		_ = sqlDB.Close()
-		return nil, errors.Join(ErrPing, err)
+		return nil, errors.Join(errors.ErrPing, err)
 	}
 
 	return Wrap(sqlDB, uri), nil
@@ -95,7 +93,7 @@ func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (Tx, error) {
 	}
 
 	if db.dsn.Options.ReadOnly() && !opts.ReadOnly {
-		return nil, ErrReadOnly
+		return nil, errors.ErrReadOnly
 	}
 
 	tx, err := db.DB.BeginTx(ctx, opts)

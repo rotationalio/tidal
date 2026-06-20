@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/tidal/model"
 	"go.rtnl.ai/ulid"
 )
@@ -46,7 +47,7 @@ func TestBaseModel_Prepare(t *testing.T) {
 func TestBaseModel_Validate(t *testing.T) {
 	t.Run("Update", func(t *testing.T) {
 		m := model.BaseModel{}
-		require.ErrorIs(t, m.Validate(model.Update), model.ErrMissingID)
+		require.ErrorIs(t, m.Validate(model.Update), errors.ErrMissingID)
 	})
 }
 

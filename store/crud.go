@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"go.rtnl.ai/tidal/conn"
+	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/tidal/filter"
 	"go.rtnl.ai/tidal/model"
 )
@@ -116,7 +117,7 @@ func (c *CRUD[M]) Update(tx conn.Tx, m M) (err error) {
 		return err
 	}
 	if nRows, _ := result.RowsAffected(); nRows == 0 {
-		return ErrNotFound
+		return errors.ErrNotFound
 	}
 	return nil
 }

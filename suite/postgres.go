@@ -93,7 +93,10 @@ func (p *PostgresProvider) DropDB(ctx context.Context, uri *dsn.DSN) (err error)
 		}
 		defer admin.Close()
 
-		if _, err = admin.ExecContext(ctx, "DROP DATABASE "+p.dsn.Path); err != nil {
+		// The FORCE option is used to drop the database even if there are
+		// lingering connections; which we don't care about because all tests
+		// are complete by the time the database is dropped in TearDownSuite.
+		if _, err = admin.ExecContext(ctx, "DROP DATABASE "+p.dsn.Path+" WITH (FORCE)"); err != nil {
 			return fmt.Errorf("could not drop database: %w", err)
 		}
 
