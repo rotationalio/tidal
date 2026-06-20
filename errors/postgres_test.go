@@ -17,6 +17,7 @@ type PostgresTests struct {
 func TestPostgres(t *testing.T) {
 	s := &PostgresTests{}
 	s.Migrations = fixtures.File("errors/postgres_schema.sql")
+	s.Teardown = suite.TeardownDropAndMigrate
 	suite.Run(t, s)
 }
 
@@ -45,8 +46,19 @@ func (s *PostgresTests) TestNotNull() {
 }
 
 func (s *PostgresTests) TestConstraint() {
-	_, err := s.DB.Exec("INSERT INTO books (title, author_id, price) VALUES ($1, $2, $3)", "Zelda Sayre", 1, -14.99)
-	s.Require().ErrorIs(PostgresError(err), ErrConstraint)
+	s.Run("DuplicateID", func() {
+		var authorID int64
+		err := s.DB.QueryRow("SELECT id FROM authors WHERE email = $1", "f.scott.fitzgerald@example.com").Scan(&authorID)
+		s.Require().NoError(err)
+
+		_, err = s.DB.Exec("INSERT INTO books (title, author_id, price) VALUES ($1, $2, $3)", "Zelda Sayre", authorID, -14.99)
+		s.Require().ErrorIs(PostgresError(err), ErrConstraint)
+	})
+
+	s.Run("PriceBelowZero", func() {
+		_, err := s.DB.Exec("INSERT INTO books (title, author_id, price) VALUES ($1, $2, $3)", "Zelda Sayre", 99, -14.99)
+		s.Require().ErrorIs(PostgresError(err), ErrConstraint)
+	})
 }
 
 func (s *PostgresTests) TestDeleteRestricted() {
