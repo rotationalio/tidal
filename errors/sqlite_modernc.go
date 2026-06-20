@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"modernc.org/sqlite"
+	modernc "modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
@@ -19,7 +19,7 @@ func SQLiteError(err error) error {
 		return nil
 	}
 
-	e := Error{
+	e := &Error{
 		Provider: "sqlite3+modernc",
 	}
 
@@ -28,7 +28,7 @@ func SQLiteError(err error) error {
 		return e
 	}
 
-	if sqliteErr, ok := errors.AsType[*sqlite.Error](err); ok {
+	if sqliteErr, ok := err.(*modernc.Error); ok {
 		e.Code = sqliteErr.Code()
 		switch e.Code {
 		case sqlite3.SQLITE_READONLY:

@@ -58,11 +58,11 @@ type Error struct {
 	Code     any
 }
 
-func (e Error) Error() string {
+func (e *Error) Error() string {
 	return fmt.Sprintf("%s: %s", e.Provider, e.Err.Error())
 }
 
-func (e Error) Unwrap() error {
+func (e *Error) Unwrap() error {
 	return e.Err
 }
 

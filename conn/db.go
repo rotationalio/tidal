@@ -6,8 +6,6 @@ import (
 
 	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/x/dsn"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 // Beginner is implemented by [DB]. Optional tidal packages such as migrations depend

@@ -1,3 +1,5 @@
+//go:build !mattn && ncruces
+
 package errors_test
 
 import (
@@ -8,12 +10,12 @@ import (
 	"go.rtnl.ai/tidal/suite/fixtures"
 )
 
-func TestPostgres(t *testing.T) {
+func TestSQLite(t *testing.T) {
 	s := &ErrorsTests{}
-	s.DatabaseError = PostgresError
-	s.Provider = &suite.PostgresProvider{}
+	s.DatabaseError = SQLiteError
+	s.Provider = &suite.SQLiteProvider{}
 	s.Teardown = suite.TeardownNone
-	s.Migrations = fixtures.File("errors/postgres_schema.sql")
+	s.Migrations = fixtures.File("errors/sqlite_schema.sql")
 
 	suite.Run(t, s)
 }

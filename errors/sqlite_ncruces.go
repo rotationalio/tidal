@@ -18,7 +18,7 @@ func SQLiteError(err error) error {
 		return nil
 	}
 
-	e := Error{
+	e := &Error{
 		Provider: "sqlite3+ncruces",
 	}
 

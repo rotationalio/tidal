@@ -14,7 +14,7 @@ func PostgresError(err error) error {
 		return nil
 	}
 
-	e := Error{
+	e := &Error{
 		Provider: "postgres",
 	}
 
