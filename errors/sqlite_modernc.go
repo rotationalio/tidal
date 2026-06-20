@@ -5,6 +5,7 @@ package errors
 import (
 	"database/sql"
 	"errors"
+	"strings"
 
 	modernc "modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
@@ -41,8 +42,14 @@ func SQLiteError(err error) error {
 			e.Err = errors.Join(ErrNotNull, err)
 		case sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY:
 			e.Err = errors.Join(ErrInvalidIdentifier, err)
-		case sqlite3.SQLITE_CONSTRAINT, sqlite3.SQLITE_CONSTRAINT_CHECK:
+		case sqlite3.SQLITE_CONSTRAINT_CHECK:
 			e.Err = errors.Join(ErrConstraint, err)
+		case sqlite3.SQLITE_CONSTRAINT, sqlite3.SQLITE_CONSTRAINT_TRIGGER:
+			if strings.Contains(err.Error(), "FOREIGN KEY") {
+				e.Err = errors.Join(ErrDeleteRestricted, err)
+			} else {
+				e.Err = errors.Join(ErrConstraint, err)
+			}
 		}
 	}
 

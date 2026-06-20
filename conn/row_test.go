@@ -9,13 +9,11 @@ import (
 	"go.rtnl.ai/tidal/conn"
 	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/x/dsn"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 // QueryRow bind failures return a Row; the error shows up on Scan and Err.
 func TestRowBindError(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := conn.OpenSQLite3(context.Background(), &dsn.DSN{Provider: "sqlite3", Path: ":memory:"})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 

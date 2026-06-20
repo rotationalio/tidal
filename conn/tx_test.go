@@ -9,8 +9,6 @@ import (
 	"go.rtnl.ai/tidal/conn"
 	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/x/dsn"
-
-	_ "github.com/mattn/go-sqlite3"
 )
 
 //============================================================================
@@ -20,7 +18,7 @@ import (
 // Unlike [conn.Row] (deferred to Scan), Exec and Query return bind errors immediately
 // when the placeholder type is unsupported.
 func TestTxnBindErrors(t *testing.T) {
-	db, err := sql.Open("sqlite3", ":memory:")
+	db, err := conn.OpenSQLite3(context.Background(), &dsn.DSN{Provider: "sqlite3", Path: ":memory:"})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 

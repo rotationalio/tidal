@@ -19,6 +19,9 @@ func TestSQLite(t *testing.T) {
 	s.Teardown = suite.TeardownNone
 	s.Migrations = fixtures.File("errors/sqlite_schema.sql")
 
+	// NOTE: modernc needs the PRAGMA to be specified on every connection.
+	// To ensure this happens, you need to pass the pragma on the connection string.
+
 	suite.Run(t, s)
 }
 

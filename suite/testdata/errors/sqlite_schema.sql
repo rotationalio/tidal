@@ -1,4 +1,4 @@
-PRAGMA foreign_keys = ON;
+PRAGMA foreign_keys=ON;
 
 CREATE TABLE IF NOT EXISTS authors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,3 +21,5 @@ INSERT INTO books (title, author_id) VALUES ('The Beautiful and Damned', (SELECT
 INSERT INTO books (title, author_id) VALUES ('The Catcher in the Rye', (SELECT id FROM authors WHERE name = 'J.D. Salinger'));
 INSERT INTO books (title, author_id) VALUES ('Nine Stories', (SELECT id FROM authors WHERE name = 'J.D. Salinger'));
 INSERT INTO books (title, author_id) VALUES ('Franny and Zooey', (SELECT id FROM authors WHERE name = 'J.D. Salinger'));
+
+PRAGMA foreign_key_check;

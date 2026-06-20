@@ -33,7 +33,7 @@ func PostgresError(err error) error {
 		case "23502":
 			e.Err = errors.Join(ErrNotNull, err)
 		case "23000", "23514":
-			return errors.Join(ErrConstraint, err)
+			e.Err = errors.Join(ErrConstraint, err)
 		case "23001":
 			e.Err = errors.Join(ErrDeleteRestricted, err)
 		case "25006":

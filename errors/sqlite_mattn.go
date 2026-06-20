@@ -28,12 +28,13 @@ func SQLiteError(err error) error {
 	}
 
 	if sqliteErr, ok := errors.AsType[*sqlite3.Error](err); ok {
-		e.Code = sqliteErr.ErrNoExtended
-		switch sqliteErr.ErrCode {
+		switch sqliteErr.Code {
 		case sqlite3.ErrReadonly:
 			e.Err = errors.Join(ErrReadOnly, err)
+			e.Code = sqliteErr.Code
 		case sqlite3.ErrConstraint:
-			switch sqliteErr.ErrNoExtended {
+			e.Code = sqliteErr.ExtendedCode
+			switch sqliteErr.ExtendedCode {
 			case sqlite3.ErrConstraintUnique:
 				e.Err = errors.Join(ErrAlreadyExists, err)
 			case sqlite3.ErrConstraintForeignKey:
@@ -45,6 +46,9 @@ func SQLiteError(err error) error {
 			default:
 				e.Err = errors.Join(ErrConstraint, err)
 			}
+		default:
+			e.Code = sqliteErr.Code
+			e.Err = err
 		}
 	}
 

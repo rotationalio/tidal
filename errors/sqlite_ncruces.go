@@ -5,6 +5,7 @@ package errors
 import (
 	"database/sql"
 	"errors"
+	"strings"
 
 	"github.com/ncruces/go-sqlite3"
 )
@@ -22,30 +23,37 @@ func SQLiteError(err error) error {
 		Provider: "sqlite3+ncruces",
 	}
 
-	if errors.Is(err, sql.ErrNoRows) {
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
 		e.Err = errors.Join(ErrNotFound, err)
-		return e
+	case errors.Is(err, sqlite3.READONLY):
+		e.Err = errors.Join(ErrReadOnly, err)
+	case errors.Is(err, sqlite3.CONSTRAINT_UNIQUE):
+		e.Err = errors.Join(ErrAlreadyExists, err)
+
+	// NOTE: this switch appears not to work with the current version of ncruces; even
+	// though it is implemented in the ncruces gorm extender; see:
+	// https://github.com/ncruces/go-sqlite3/blob/3fdcb0a066c12a1c67612dc1be2245eb5494fa5c/gormlite/error_translator.go#L19
+	case errors.Is(err, sqlite3.CONSTRAINT_FOREIGNKEY):
+		e.Err = errors.Join(ErrMissingReference, err)
+	case errors.Is(err, sqlite3.CONSTRAINT_NOTNULL):
+		e.Err = errors.Join(ErrNotNull, err)
+	case errors.Is(err, sqlite3.CONSTRAINT_PRIMARYKEY):
+		e.Err = errors.Join(ErrInvalidIdentifier, err)
+	case errors.Is(err, sqlite3.CONSTRAINT):
+		if strings.Contains(err.Error(), "FOREIGN KEY") {
+			e.Err = errors.Join(ErrDeleteRestricted, err)
+		} else {
+			e.Err = errors.Join(ErrConstraint, err)
+		}
 	}
 
 	if sqliteErr, ok := errors.AsType[*sqlite3.Error](err); ok {
 		e.Code = sqliteErr.Code()
-		switch e.Code {
-		case sqlite3.READONLY:
-			e.Err = errors.Join(ErrReadOnly, err)
-		case sqlite3.CONSTRAINT:
-			switch sqliteErr.ExtendedCode() {
-			case sqlite3.CONSTRAINT_UNIQUE:
-				e.Err = errors.Join(ErrAlreadyExists, err)
-			case sqlite3.CONSTRAINT_FOREIGNKEY:
-				e.Err = errors.Join(ErrMissingReference, err)
-			case sqlite3.CONSTRAINT_NOTNULL:
-				e.Err = errors.Join(ErrNotNull, err)
-			case sqlite3.CONSTRAINT_PRIMARYKEY:
-				e.Err = errors.Join(ErrInvalidIdentifier, err)
-			default:
-				e.Err = errors.Join(ErrConstraint, err)
-			}
-		}
+	} else if sqliteErr, ok := errors.AsType[sqlite3.ExtendedErrorCode](err); ok {
+		e.Code = sqliteErr
+	} else if sqliteErr, ok := errors.AsType[sqlite3.ErrorCode](err); ok {
+		e.Code = sqliteErr
 	}
 
 	if e.Err == nil {

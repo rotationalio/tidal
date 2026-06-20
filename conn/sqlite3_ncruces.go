@@ -9,7 +9,7 @@ import (
 	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/x/dsn"
 
-	_ "github.com/ncruces/go-sqlite3"
+	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
 const (
@@ -17,6 +17,12 @@ const (
 	sqliteDriver = "sqlite3"
 )
 
+// Open a database connection using the ncruces sqlite3 driver.
+// Build tag ncruces required to use this driver.
+//
+// Note there is some duplicate code here between the different sqlite3 drivers.
+// This is necessary because of the driver import on line 12 that ensures the right
+// database driver is used to open the connection.
 func openSQLite3(_ context.Context, uri *dsn.DSN) (*sql.DB, error) {
 	if uri.Driver != "" {
 		if uri.Driver != driverName {
