@@ -63,12 +63,7 @@ func (s *ErrorsTests) TestConstraint() {
 		require.Error(err, "expected an error from this operation")
 
 		dberr := s.DatabaseError(err)
-		require.Error(dberr, "expected an error from this operation")
-
-		e, ok := dberr.(*Error)
-		require.True(ok, "did not return a *Error")
-
-		require.ErrorIs(dberr, ErrConstraint, "got code %+v from %T, %+v", e.Code, err, err)
+		require.ErrorIs(dberr, ErrConstraint, "got code %+v from %T, %+v", dberr.(*Error).Code, err, err)
 	})
 
 	s.Run("PriceBelowZero", func() {
@@ -78,12 +73,7 @@ func (s *ErrorsTests) TestConstraint() {
 		require.Error(err, "expected an error from this operation")
 
 		dberr := s.DatabaseError(err)
-		require.Error(dberr, "expected an error from this operation")
-
-		e, ok := dberr.(*Error)
-		require.True(ok, "did not return a *Error")
-
-		require.ErrorIs(dberr, ErrConstraint, "got code %+v from %T, %+v", e.Code, err, err)
+		require.ErrorIs(dberr, ErrConstraint, "got code %+v from %T, %+v", dberr.(*Error).Code, err, err)
 	})
 }
 
