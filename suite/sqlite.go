@@ -92,8 +92,33 @@ func (p *SQLiteProvider) DropDB(ctx context.Context, uri *dsn.DSN) (err error) {
 }
 
 func (p *SQLiteProvider) DropTables(ctx context.Context, conn *tidal.DB) (err error) {
+	var dbc *sql.Conn
+	if dbc, err = conn.DB.Conn(ctx); err != nil {
+		return fmt.Errorf("could not get db connection: %w", err)
+	}
+	defer dbc.Close()
+
+	var fk bool
+	if fk, err = p.foreignKeysEnabledConn(ctx, dbc); err != nil {
+		return fmt.Errorf("could not check foreign keys: %w", err)
+	}
+
+	if fk {
+		// PRAGMA foreign_keys is connection-scoped in SQLite, so this must run on the
+		// same connection used for the transaction below.
+		if _, err = dbc.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+			return fmt.Errorf("could not set foreign keys to off: %w", err)
+		}
+
+		defer func() {
+			if _, fkerr := dbc.ExecContext(ctx, "PRAGMA foreign_keys = ON"); fkerr != nil {
+				err = errors.Join(err, fmt.Errorf("could not set foreign keys to on: %w", fkerr))
+			}
+		}()
+	}
+
 	var tx *sql.Tx
-	if tx, err = conn.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
+	if tx, err = dbc.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
 		return fmt.Errorf("could not begin transaction: %w", err)
 	}
 	defer tx.Rollback()
@@ -101,19 +126,6 @@ func (p *SQLiteProvider) DropTables(ctx context.Context, conn *tidal.DB) (err er
 	var tables []string
 	if tables, err = p.listTables(tx); err != nil {
 		return fmt.Errorf("could not list tables: %w", err)
-	}
-
-	// Disable foreign key constraints.
-	var fk bool
-	if fk, err = p.foreignKeysEnabled(tx); err != nil {
-		return fmt.Errorf("could not check foreign keys: %w", err)
-	}
-
-	if fk {
-		// Temporarily disable foreign key constraints.
-		if _, err = tx.Exec("PRAGMA foreign_keys = OFF"); err != nil {
-			return fmt.Errorf("could not set foreign keys to off: %w", err)
-		}
 	}
 
 	for _, table := range tables {
@@ -122,19 +134,37 @@ func (p *SQLiteProvider) DropTables(ctx context.Context, conn *tidal.DB) (err er
 		}
 	}
 
-	if fk {
-		// Re-enable foreign key constraints.
-		if _, err = tx.Exec("PRAGMA foreign_keys = ON"); err != nil {
-			return fmt.Errorf("could not set foreign keys to on: %w", err)
-		}
-	}
-
 	return tx.Commit()
 }
 
 func (p *SQLiteProvider) TruncateTables(ctx context.Context, conn *tidal.DB) (err error) {
+	var dbc *sql.Conn
+	if dbc, err = conn.DB.Conn(ctx); err != nil {
+		return fmt.Errorf("could not get db connection: %w", err)
+	}
+	defer dbc.Close()
+
+	var fk bool
+	if fk, err = p.foreignKeysEnabledConn(ctx, dbc); err != nil {
+		return fmt.Errorf("could not check foreign keys: %w", err)
+	}
+
+	if fk {
+		// PRAGMA foreign_keys is connection-scoped in SQLite, so this must run on the
+		// same connection used for the transaction below.
+		if _, err = dbc.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+			return fmt.Errorf("could not set foreign keys to off: %w", err)
+		}
+
+		defer func() {
+			if _, fkerr := dbc.ExecContext(ctx, "PRAGMA foreign_keys = ON"); fkerr != nil {
+				err = errors.Join(err, fmt.Errorf("could not set foreign keys to on: %w", fkerr))
+			}
+		}()
+	}
+
 	var tx *sql.Tx
-	if tx, err = conn.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
+	if tx, err = dbc.BeginTx(ctx, &sql.TxOptions{ReadOnly: false, Isolation: sql.LevelSerializable}); err != nil {
 		return fmt.Errorf("could not begin transaction: %w", err)
 	}
 	defer tx.Rollback()
@@ -142,19 +172,6 @@ func (p *SQLiteProvider) TruncateTables(ctx context.Context, conn *tidal.DB) (er
 	var tables []string
 	if tables, err = p.listTables(tx); err != nil {
 		return fmt.Errorf("could not list tables: %w", err)
-	}
-
-	// Disable foreign key constraints.
-	var fk bool
-	if fk, err = p.foreignKeysEnabled(tx); err != nil {
-		return fmt.Errorf("could not check foreign keys: %w", err)
-	}
-
-	if fk {
-		// Temporarily disable foreign key constraints.
-		if _, err = tx.Exec("PRAGMA foreign_keys = OFF"); err != nil {
-			return fmt.Errorf("could not set foreign keys to off: %w", err)
-		}
 	}
 
 	for _, table := range tables {
@@ -169,13 +186,6 @@ func (p *SQLiteProvider) TruncateTables(ctx context.Context, conn *tidal.DB) (er
 			if !strings.Contains(err.Error(), "no such table: sqlite_sequence") {
 				return fmt.Errorf("could not restart auto-increment counter for table %s: %w", table, err)
 			}
-		}
-	}
-
-	if fk {
-		// Re-enable foreign key constraints.
-		if _, err = tx.Exec("PRAGMA foreign_keys = ON"); err != nil {
-			return fmt.Errorf("could not set foreign keys to on: %w", err)
 		}
 	}
 
@@ -212,8 +222,8 @@ func (p *SQLiteProvider) listTables(tx *sql.Tx) (tables []string, err error) {
 	return tables, rows.Err()
 }
 
-func (p *SQLiteProvider) foreignKeysEnabled(tx *sql.Tx) (enabled bool, err error) {
-	row := tx.QueryRow("PRAGMA foreign_keys")
+func (p *SQLiteProvider) foreignKeysEnabledConn(ctx context.Context, conn *sql.Conn) (enabled bool, err error) {
+	row := conn.QueryRowContext(ctx, "PRAGMA foreign_keys")
 	err = row.Scan(&enabled)
 	return enabled, err
 }
