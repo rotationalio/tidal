@@ -222,12 +222,6 @@ func (p *SQLiteProvider) listTables(tx *sql.Tx) (tables []string, err error) {
 	return tables, rows.Err()
 }
 
-func (p *SQLiteProvider) foreignKeysEnabled(tx *sql.Tx) (enabled bool, err error) {
-	row := tx.QueryRow("PRAGMA foreign_keys")
-	err = row.Scan(&enabled)
-	return enabled, err
-}
-
 func (p *SQLiteProvider) foreignKeysEnabledConn(ctx context.Context, conn *sql.Conn) (enabled bool, err error) {
 	row := conn.QueryRowContext(ctx, "PRAGMA foreign_keys")
 	err = row.Scan(&enabled)

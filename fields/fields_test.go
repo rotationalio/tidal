@@ -38,4 +38,3 @@ func TestPostgresFields(t *testing.T) {
 	// Run the tests
 	suite.Run(t, s)
 }
-
