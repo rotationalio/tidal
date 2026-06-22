@@ -4,6 +4,7 @@ import (
 	"database/sql"
 
 	"go.rtnl.ai/tidal/bind"
+	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/x/dsn"
 )
 
@@ -24,6 +25,7 @@ func newTxn(tx *sql.Tx, uri *dsn.DSN) Tx {
 		Tx:          tx,
 		dsn:         uri.Clone(),
 		placeholder: bind.PlaceholderFor(uri.Provider),
+		mapErr:      errorMapperFor(uri.Provider),
 	}
 }
 
@@ -32,6 +34,7 @@ type Txn struct {
 	*sql.Tx
 	dsn         *dsn.DSN
 	placeholder bind.PlaceholderType
+	mapErr      func(error) error
 }
 
 // Returns the DSN provider (for example [dsn.Postgres] or [dsn.SQLite3]).
@@ -53,25 +56,40 @@ func (t *Txn) Placeholder() bind.PlaceholderType {
 func (t *Txn) Exec(query string, args ...sql.NamedArg) (sql.Result, error) {
 	p, err := bind.Rewrite(query, args, t.placeholder)
 	if err != nil {
-		return nil, err
+		return nil, t.mapErr(err)
 	}
-	return t.Tx.Exec(p.SQL(), p.Args()...)
+	result, err := t.Tx.Exec(p.SQL(), p.Args()...)
+	return result, t.mapErr(err)
 }
 
 // Query runs a query after rewriting placeholders for the configured driver.
 func (t *Txn) Query(query string, args ...sql.NamedArg) (*sql.Rows, error) {
 	p, err := bind.Rewrite(query, args, t.placeholder)
 	if err != nil {
-		return nil, err
+		return nil, t.mapErr(err)
 	}
-	return t.Tx.Query(p.SQL(), p.Args()...)
+	rows, err := t.Tx.Query(p.SQL(), p.Args()...)
+	return rows, t.mapErr(err)
 }
 
 // QueryRow runs a query after rewriting placeholders for the configured driver.
 func (t *Txn) QueryRow(query string, args ...sql.NamedArg) *Row {
 	p, err := bind.Rewrite(query, args, t.placeholder)
 	if err != nil {
-		return &Row{err: err}
+		return &Row{err: err, mapErr: t.mapErr}
 	}
-	return &Row{row: t.Tx.QueryRow(p.SQL(), p.Args()...)}
+	return &Row{row: t.Tx.QueryRow(p.SQL(), p.Args()...), mapErr: t.mapErr}
+}
+
+// errorMapperFor returns the database error mapper for provider. If the
+// provider is not supported, returns the identity function (no-op).
+func errorMapperFor(provider string) func(error) error {
+	switch provider {
+	case dsn.Postgres:
+		return errors.PostgresError
+	case dsn.SQLite3:
+		return errors.SQLiteError
+	default:
+		return func(err error) error { return err }
+	}
 }
