@@ -7,12 +7,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/tidal/errors"
 	"go.rtnl.ai/tidal/model"
+	"go.rtnl.ai/tidal/suite"
 	"go.rtnl.ai/ulid"
 )
 
 //============================================================================
 // Base Model Tests
 //============================================================================
+
+var _ suite.Comparer[model.BaseModel] = (*model.BaseModel)(nil)
+var _ suite.Equaler[model.BaseModel] = (*model.BaseModel)(nil)
 
 func TestBaseModel_Prepare(t *testing.T) {
 	t.Run("Create", func(t *testing.T) {

@@ -141,3 +141,34 @@ func (b *BaseModel) Validate(op Operation) error {
 func (b *BaseModel) IsZero() bool {
 	return b == nil || (b.ID.IsZero() && b.Created.IsZero() && b.Modified.IsZero())
 }
+
+// Compare returns the result of comparing the ID ULIDs together. Generally speaking
+// this method sorts base models ascending by Created timestamp but without worrying
+// about database driver timestamp precision.
+//
+// NOTE: this is not true equality because it doesn't compare all fields, just the ID.
+func (b BaseModel) Compare(other BaseModel) int {
+	return b.ID.Compare(other.ID)
+}
+
+// Equal returns true if all fields are equal. Timestamp fields are compared at the
+// millisecond precision for database driver compatibility.
+func (b BaseModel) Equal(other BaseModel) bool {
+	if b.ID != other.ID {
+		return false
+	}
+
+	if !normalizeTime(b.Created).Equal(normalizeTime(other.Created)) {
+		return false
+	}
+
+	if !normalizeTime(b.Modified).Equal(normalizeTime(other.Modified)) {
+		return false
+	}
+
+	return true
+}
+
+func normalizeTime(t time.Time) time.Time {
+	return t.UTC().Truncate(time.Millisecond)
+}
