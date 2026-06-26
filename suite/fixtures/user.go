@@ -3,9 +3,11 @@ package fixtures
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.rtnl.ai/tidal"
+	"go.rtnl.ai/tidal/fields"
 	"go.rtnl.ai/ulid"
 )
 
@@ -17,11 +19,11 @@ import (
 type User struct {
 	tidal.BaseModel
 	Name     string
-	DOB      sql.NullTime
+	DOB      fields.Timestamp
 	Email    string
 	Password string
 	Verified bool
-	LastSeen sql.NullTime
+	LastSeen fields.Timestamp
 }
 
 var _ tidal.Model = (*User)(nil)
@@ -69,14 +71,65 @@ func (u *User) Scan(op tidal.Operation, s tidal.Scanner) error {
 	}
 }
 
+// Compare returns a deterministic lexical ordering across all User fields.
+func (u *User) Compare(other *User) int {
+	if u == nil || other == nil {
+		switch {
+		case u == nil && other == nil:
+			return 0
+		case u == nil:
+			return -1
+		default:
+			return 1
+		}
+	}
+
+	if diff := u.ID.Compare(other.ID); diff != 0 {
+		return diff
+	}
+	if diff := u.Created.Compare(other.Created); diff != 0 {
+		return diff
+	}
+	if diff := u.Modified.Compare(other.Modified); diff != 0 {
+		return diff
+	}
+	if diff := strings.Compare(u.Name, other.Name); diff != 0 {
+		return diff
+	}
+	if diff := u.DOB.Compare(other.DOB); diff != 0 {
+		return diff
+	}
+	if diff := strings.Compare(u.Email, other.Email); diff != 0 {
+		return diff
+	}
+	if diff := strings.Compare(u.Password, other.Password); diff != 0 {
+		return diff
+	}
+	if u.Verified != other.Verified {
+		if u.Verified {
+			return 1
+		}
+		return -1
+	}
+	if diff := u.LastSeen.Compare(other.LastSeen); diff != 0 {
+		return diff
+	}
+	return 0
+}
+
+// Equal reports semantic model equality with DB-friendly timestamp tolerance.
+func (u *User) Equal(other *User) bool {
+	return u.Compare(other) == 0
+}
+
 // NewConformanceUser returns a fresh User suitable for CRUD conformance runs.
 func NewConformanceUser() *User {
 	return &User{
 		Name:     "Conformance User",
-		DOB:      sql.NullTime{Valid: true, Time: time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC)},
+		DOB:      fields.Time(time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC)),
 		Email:    fmt.Sprintf("conformance-%s@example.com", ulid.MakeSecure().String()),
 		Password: "test-password",
 		Verified: true,
-		LastSeen: sql.NullTime{Valid: true, Time: time.Now().Add(-1 * time.Hour)},
+		LastSeen: fields.Time(time.Now().Add(-1 * time.Hour)),
 	}
 }

@@ -1,4 +1,5 @@
-// Package fixtures loads SQL files from disk and applies them in database test suites.
+// Package fixtures provides test fixtures for suite-driven integration tests,
+// including SQL file loaders and reusable test model implementations.
 //
 // Use [File] to reference SQL under suite/testdata, or construct a [Fixture] from any
 // path. Fixtures implement the [suite.Migrations] interface.

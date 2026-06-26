@@ -2,8 +2,10 @@ package tidal_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.rtnl.ai/tidal/fields"
 	"go.rtnl.ai/tidal/migrations"
 	"go.rtnl.ai/tidal/suite"
 	"go.rtnl.ai/tidal/suite/fixtures"
@@ -56,7 +58,10 @@ func (s *TidalTestSuite) TestUserCRUDConformance() {
 		Table:  "users",
 		Create: fixtures.NewConformanceUser,
 		Update: func(u *fixtures.User) {
+			// Mutate every persisted update field.
 			u.Name = "Updated Conformance User"
+			u.DOB = fields.Time(time.Date(1988, 5, 21, 0, 0, 0, 0, time.UTC))
+			u.Email = "updated-conformance@example.com"
 		},
 	})
 }

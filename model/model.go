@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"go.rtnl.ai/tidal/errors"
+	"go.rtnl.ai/tidal/fields"
 	"go.rtnl.ai/ulid"
 )
 
@@ -104,8 +105,8 @@ func Make[M Model]() M {
 // BaseModel is embedded into most models to provide ID management and timestamps.
 type BaseModel struct {
 	ID       ulid.ULID
-	Created  time.Time
-	Modified time.Time
+	Created  fields.Timestamp
+	Modified fields.Timestamp
 }
 
 var _ Preparer = (*BaseModel)(nil)
@@ -117,11 +118,11 @@ func (b *BaseModel) Prepare(op Operation) {
 	switch op {
 	case Create:
 		b.ID = ulid.MakeSecure()
-		b.Created = time.Now().UTC()
+		b.Created = fields.Time(time.Now())
 		b.Modified = b.Created
 
 	case Update:
-		b.Modified = time.Now().UTC()
+		b.Modified.Now()
 	}
 }
 
@@ -140,4 +141,31 @@ func (b *BaseModel) Validate(op Operation) error {
 // IsZero reports whether the receiver is nil or all fields are zero.
 func (b *BaseModel) IsZero() bool {
 	return b == nil || (b.ID.IsZero() && b.Created.IsZero() && b.Modified.IsZero())
+}
+
+// Compare returns the result of comparing the ID ULIDs together. Generally speaking
+// this method sorts base models ascending by Created timestamp but without worrying
+// about database driver timestamp precision.
+//
+// NOTE: this is not true equality because it doesn't compare all fields, just the ID.
+func (b BaseModel) Compare(other BaseModel) int {
+	return b.ID.Compare(other.ID)
+}
+
+// Equal returns true if all fields are equal. Timestamp fields are compared at the
+// millisecond precision for database driver compatibility.
+func (b BaseModel) Equal(other BaseModel) bool {
+	if b.ID != other.ID {
+		return false
+	}
+
+	if !b.Created.Equal(other.Created) {
+		return false
+	}
+
+	if !b.Modified.Equal(other.Modified) {
+		return false
+	}
+
+	return true
 }

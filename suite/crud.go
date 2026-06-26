@@ -11,7 +11,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.rtnl.ai/tidal"
-	"go.rtnl.ai/tidal/fields"
 	"go.rtnl.ai/ulid"
 	"go.rtnl.ai/x/typecase"
 )
@@ -38,6 +37,10 @@ type CRUDConformance[M tidal.Model] struct {
 	// comparison is used that tolerates database timestamp truncation and compares
 	// ULIDs by value. Provide a custom function when models include field types that
 	// need special handling (for example JSONB normalization).
+	//
+	// Deprecated: implement [Equaler[M]] or [Comparer[M]] on your model and field
+	// types instead. This hook is still supported for backward compatibility and
+	// overrides interface-based equality when set.
 	Equal func(a, b M) bool
 
 	// Optional override for the columns are fed to Scan for each operation.
@@ -87,6 +90,7 @@ func ConformsCRUD[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M]) {
 	if len(cfg.Phases) == 0 {
 		cfg.Phases = []CRUDPhase{CRUDShape, CRUDScan, CRUDRoundTrip}
 	}
+	modelEqual := resolveModelEqual(s.T(), cfg)
 
 	for _, phase := range cfg.Phases {
 		switch phase {
@@ -96,11 +100,11 @@ func ConformsCRUD[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M]) {
 			})
 		case CRUDScan:
 			s.Run("Scan", func() {
-				testCRUDScan(s, cfg)
+				testCRUDScan(s, cfg, modelEqual)
 			})
 		case CRUDRoundTrip:
 			s.Run("RoundTrip", func() {
-				testCRUDRoundTrip(s, cfg, crud, cfg.Equal)
+				testCRUDRoundTrip(s, cfg, crud, modelEqual)
 			})
 		default:
 			require.Failf("unknown CRUD conformance phase %q", string(phase))
@@ -171,7 +175,7 @@ func testCRUDShape[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M], crud
 //
 // This catches Scan/Fields/Params mismatches before paying for a DB round-trip.
 // List is omitted because it uses a different column subset than Create/Retrieve.
-func testCRUDScan[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M]) {
+func testCRUDScan[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M], equal func(a, b M) bool) {
 	s.T().Helper()
 	require := s.Require()
 
@@ -193,7 +197,7 @@ func testCRUDScan[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M]) {
 			// Scan may hydrate more columns than Params(Update) includes; compare only
 			// the operation's declared field subset for conformance.
 			require.True(
-				equalListFields(s.T(), original, got, original.Fields(op), nil, cfg.FieldMap),
+				equalListFields(s.T(), original, got, original.Fields(op), equal, cfg.FieldMap),
 				"Scan(%s) did not round-trip model values for Fields(%s)",
 				op,
 				op,
@@ -211,10 +215,6 @@ func testCRUDScan[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M]) {
 func testCRUDRoundTrip[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M], crud *tidal.CRUD[M], equal func(a, b M) bool) {
 	s.T().Helper()
 	require := s.Require()
-	equalFn := equal
-	if equalFn == nil {
-		equalFn = func(a, b M) bool { return defaultEqual(s.T(), a, b) }
-	}
 
 	// Real transaction on the suite's live DB connection (SQLite file or Postgres).
 	tx := s.BeginTx(nil)
@@ -237,7 +237,7 @@ func testCRUDRoundTrip[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M], 
 	// (post-Prepare) against what Scan pulled from the database.
 	retrieved, err := crud.Retrieve(tx, modelID(s.T(), created))
 	require.NoError(err, "Retrieve after Create failed")
-	require.True(equalFn(created, retrieved), "Retrieve after Create returned unexpected model")
+	require.True(equal(created, retrieved), "Retrieve after Create returned unexpected model")
 
 	// --- LIST ---
 	// Uses CRUD List with a manual WHERE clause filter. Expect exactly the row we inserted.
@@ -270,7 +270,7 @@ func testCRUDRoundTrip[M tidal.Model](s *DatabaseSuite, cfg CRUDConformance[M], 
 	// --- RETRIEVE (after update) ---
 	updated, err := crud.Retrieve(tx, modelID(s.T(), created))
 	require.NoError(err, "Retrieve after Update failed")
-	require.True(equalFn(created, updated), "Retrieve after Update returned unexpected model")
+	require.True(equal(created, updated), "Retrieve after Update returned unexpected model")
 
 	// --- DELETE ---
 	_, err = crud.Delete(tx, modelID(s.T(), created))
@@ -376,6 +376,31 @@ func defaultEqual[M tidal.Model](tb testing.TB, a, b M) bool {
 	return equalValues(tb, reflect.ValueOf(a), reflect.ValueOf(b))
 }
 
+// Resolves model-level equality for full CRUD round-trip checks.
+//
+// Precedence:
+//  1. cfg.Equal (deprecated override)
+//  2. Model implements Equaler[M]
+//  3. Model implements Comparer[M]
+//  4. Reflective fallback ([defaultEqual])
+func resolveModelEqual[M tidal.Model](tb testing.TB, cfg CRUDConformance[M]) func(a, b M) bool {
+	tb.Helper()
+	if cfg.Equal != nil {
+		return cfg.Equal
+	}
+
+	return func(a, b M) bool {
+		tb.Helper()
+		if modelEqual, ok := any(a).(Equaler[M]); ok {
+			return modelEqual.Equal(b)
+		}
+		if modelCompare, ok := any(a).(Comparer[M]); ok {
+			return modelCompare.Compare(b) == 0
+		}
+		return defaultEqual(tb, a, b)
+	}
+}
+
 // Compares two models on the subset of columns returned by Fields(List). List
 // Scan does not populate password, dob, etc., so we must not use full struct
 // Equal.
@@ -419,37 +444,28 @@ func equalListFields[M tidal.Model](tb testing.TB, a, b M, columns []string, equ
 func equalValues(tb testing.TB, a, b reflect.Value) bool {
 	tb.Helper()
 
-	// Peel pointers and interface wrappers until we reach concrete values.
-	for a.Kind() == reflect.Ptr || a.Kind() == reflect.Interface {
-		if a.IsNil() || b.IsNil() {
-			return a.IsNil() && b.IsNil()
-		}
-		a = a.Elem()
-		b = b.Elem()
+	if !a.IsValid() || !b.IsValid() {
+		return !a.IsValid() && !b.IsValid()
 	}
-
 	if a.Type() != b.Type() {
 		return false
 	}
 
-	// Custom field wrappers that need DB round-trip normalization.
-	if a.Type() == reflect.TypeOf(fields.StringArray{}) {
-		return a.Interface().(fields.StringArray).Equal(b.Interface().(fields.StringArray))
-	}
-	if a.Type() == reflect.TypeOf(fields.NullStringArray{}) {
-		return a.Interface().(fields.NullStringArray).Equal(b.Interface().(fields.NullStringArray))
-	}
-	if a.Type() == reflect.TypeOf(fields.JSONB{}) {
-		return a.Interface().(fields.JSONB).Equal(b.Interface().(fields.JSONB))
-	}
-	if a.Type() == reflect.TypeOf(fields.NullJSONB{}) {
-		return a.Interface().(fields.NullJSONB).Equal(b.Interface().(fields.NullJSONB))
+	// Pointers and interfaces can expose Equal/Compare methods, but nil values
+	// must be handled first.
+	if a.Kind() == reflect.Ptr || a.Kind() == reflect.Interface {
+		if a.IsNil() || b.IsNil() {
+			return a.IsNil() && b.IsNil()
+		}
+		if equal, ok := compareWithMethods(a, b); ok {
+			return equal
+		}
+		return equalValues(tb, a.Elem(), b.Elem())
 	}
 
-	switch a.Kind() {
-	case reflect.Struct:
-		// Types that survive a DB round-trip but not reflect.DeepEqual:
-		// time.Time, sql.NullTime, ulid.ULID.
+	// Types that survive a DB round-trip but not reflect.DeepEqual:
+	// time.Time and sql.NullTime.
+	if a.CanInterface() && b.CanInterface() {
 		if a.Type() == reflect.TypeOf(time.Time{}) {
 			return timeEqual(tb, a.Interface().(time.Time), b.Interface().(time.Time))
 		}
@@ -468,6 +484,20 @@ func equalValues(tb testing.TB, a, b reflect.Value) bool {
 			// ULID is a [16]byte array; == compares bytes, not pointer identity.
 			return a.Interface().(ulid.ULID) == b.Interface().(ulid.ULID)
 		}
+	}
+
+	// Prefer explicit semantic equality hooks where available.
+	if equal, ok := compareWithMethods(a, b); ok {
+		return equal
+	}
+
+	// Remaining nil-capable kinds (slice/map/chan/func) can now use nil semantics.
+	if isNilableKind(a.Kind()) && (a.IsNil() || b.IsNil()) {
+		return a.IsNil() && b.IsNil()
+	}
+
+	switch a.Kind() {
+	case reflect.Struct:
 		// Generic struct: recurse field-by-field (handles embedded fields too).
 		for i := 0; i < a.NumField(); i++ {
 			if !equalValues(tb, a.Field(i), b.Field(i)) {
@@ -475,8 +505,147 @@ func equalValues(tb testing.TB, a, b reflect.Value) bool {
 			}
 		}
 		return true
+	case reflect.Array:
+		for i := 0; i < a.Len(); i++ {
+			if !equalValues(tb, a.Index(i), b.Index(i)) {
+				return false
+			}
+		}
+		return true
+	case reflect.Slice:
+		if a.Len() != b.Len() {
+			return false
+		}
+		for i := 0; i < a.Len(); i++ {
+			if !equalValues(tb, a.Index(i), b.Index(i)) {
+				return false
+			}
+		}
+		return true
+	case reflect.Map:
+		if a.Len() != b.Len() {
+			return false
+		}
+		for _, key := range a.MapKeys() {
+			bv := b.MapIndex(key)
+			if !bv.IsValid() {
+				return false
+			}
+			if !equalValues(tb, a.MapIndex(key), bv) {
+				return false
+			}
+		}
+		return true
+	case reflect.Bool:
+		return a.Bool() == b.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return a.Int() == b.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return a.Uint() == b.Uint()
+	case reflect.Float32, reflect.Float64:
+		return a.Float() == b.Float()
+	case reflect.Complex64, reflect.Complex128:
+		return a.Complex() == b.Complex()
+	case reflect.String:
+		return a.String() == b.String()
+	case reflect.Func:
+		return a.IsNil() && b.IsNil()
+	case reflect.Chan, reflect.UnsafePointer:
+		return a.Pointer() == b.Pointer()
 	default:
-		return reflect.DeepEqual(a.Interface(), b.Interface())
+		if a.CanInterface() && b.CanInterface() {
+			return reflect.DeepEqual(a.Interface(), b.Interface())
+		}
+		if a.Type().Comparable() {
+			return a.Equal(b)
+		}
+		return false
+	}
+}
+
+// Tries model/field semantic comparers before reflective recursion.
+func compareWithMethods(a, b reflect.Value) (equal bool, ok bool) {
+	if equal, ok := callComparisonMethod(a, b, "Equal"); ok {
+		return equal, true
+	}
+	if equal, ok := callComparisonMethod(a, b, "Compare"); ok {
+		return equal, true
+	}
+	return false, false
+}
+
+// Calls a comparison method when receiver + arg signatures match:
+//
+//	Equal(other T) bool
+//	Compare(other T) int // equal when Compare == 0
+func callComparisonMethod(a, b reflect.Value, methodName string) (equal bool, ok bool) {
+	receivers := []reflect.Value{a}
+	if a.CanAddr() {
+		receivers = append(receivers, a.Addr())
+	}
+
+	for _, receiver := range receivers {
+		method := receiver.MethodByName(methodName)
+		if !method.IsValid() {
+			continue
+		}
+
+		methodType := method.Type()
+		if methodType.NumIn() != 1 || methodType.NumOut() != 1 {
+			continue
+		}
+		if methodType.In(0) != b.Type() {
+			continue
+		}
+
+		switch methodName {
+		case "Equal":
+			if methodType.Out(0).Kind() != reflect.Bool {
+				continue
+			}
+		case "Compare":
+			if methodType.Out(0).Kind() != reflect.Int {
+				continue
+			}
+		default:
+			continue
+		}
+
+		// Keep comparison robust even if a third-party Equal/Compare panics.
+		var (
+			result   []reflect.Value
+			panicked bool
+		)
+		func() {
+			defer func() {
+				if recover() != nil {
+					panicked = true
+				}
+			}()
+			result = method.Call([]reflect.Value{b})
+		}()
+
+		if panicked || len(result) != 1 {
+			continue
+		}
+
+		switch methodName {
+		case "Equal":
+			return result[0].Bool(), true
+		case "Compare":
+			return result[0].Int() == 0, true
+		}
+	}
+
+	return false, false
+}
+
+func isNilableKind(kind reflect.Kind) bool {
+	switch kind {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+		return true
+	default:
+		return false
 	}
 }
 

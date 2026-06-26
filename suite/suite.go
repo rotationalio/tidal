@@ -1,3 +1,10 @@
+// Package suite provides database-backed test harnesses for tidal packages and
+// applications, including provider-aware setup/teardown and model conformance
+// checks via [ConformsCRUD].
+//
+// Conformance equality prefers model semantics through [Equaler] and [Comparer]
+// interfaces before reflective fallback, so tests can validate DB round-trips
+// for custom field types without ad-hoc comparison code.
 package suite
 
 import (
@@ -8,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.rtnl.ai/tidal"
 	"go.rtnl.ai/x/dsn"
@@ -24,6 +32,24 @@ const (
 	SQLITE_DATABASE_URL   = "SQLITE_DATABASE_URL"
 	POSTGRES_DATABASE_URL = "POSTGRES_DATABASE_URL"
 )
+
+//============================================================================
+// Interfaces
+//============================================================================
+
+// Comparer is used to compare two models. The BaseModel compares by the Created
+// timestamp; e.g. a model created earlier is less than a later model (sorted ascending).
+type Comparer[M any] interface {
+	Compare(other M) int
+}
+
+// Equaler is used to compare two models for equality. Generally this method is faster
+// than reflect.DeepEqual and handles things like normalizing timestamps. The BaseModel
+// equality ensures that the Created and Modified timestamps are equal when truncated
+// to the millisecond.
+type Equaler[M any] interface {
+	Equal(other M) bool
+}
 
 //============================================================================
 // Suite Errors
@@ -229,6 +255,36 @@ func (s *DatabaseSuite) TearDownSubTest() {
 		s.subCancel = nil
 	}
 	s.ctx, s.cancel = s.testCtx, s.testCancel
+}
+
+//============================================================================
+// Assertion Utilities
+//============================================================================
+
+func (s *DatabaseSuite) TimeEqual(expected, actual time.Time, msgAndArgs ...interface{}) {
+	expected = tidal.NormalizeTime(expected, s.dsn.Provider)
+	actual = tidal.NormalizeTime(actual, s.dsn.Provider)
+	s.Require().True(expected.Equal(actual), msgAndArgs...)
+}
+
+// ModelEqual compares two models for equality that implement the Equaler interface.
+//
+// NOTE: unfortunately, this function cannot be a method of the DatabaseSuite struct
+// until Go implements generics for methods.
+func ModelEqual[M any, E Equaler[M]](tb testing.TB, expected E, actual M, msgAndArgs ...interface{}) {
+	tb.Helper()
+	require := require.New(tb)
+	require.True(expected.Equal(actual), msgAndArgs...)
+}
+
+// ModelCompare compares two models for equality that implement the Comparer interface.
+//
+// NOTE: unfortunately, this function cannot be a method of the DatabaseSuite struct
+// until Go implements generics for methods.
+func ModelCompare[M any, C Comparer[M]](tb testing.TB, expected int, comparer C, value M, msgAndArgs ...interface{}) {
+	tb.Helper()
+	require := require.New(tb)
+	require.Equal(expected, comparer.Compare(value), msgAndArgs...)
 }
 
 //============================================================================
