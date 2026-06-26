@@ -22,8 +22,8 @@ func TestValuesForScan(t *testing.T) {
 	uid := ulid.MustParse("01KTESYNDPVTRWK05N2TXFKGQZ")
 	other := ulid.MustParse("01KTESYNDPVTRWK05N2TXFKGQ0")
 	seen := sql.NullTime{Valid: true, Time: time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)}
-	created := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	modified := time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)
+	created := fields.Time(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+	modified := fields.Time(time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC))
 
 	m := &scanHelperModel{
 		BaseModel: tidal.BaseModel{ID: uid, Created: created, Modified: modified},
@@ -40,8 +40,8 @@ func TestValuesForScan(t *testing.T) {
 
 	t.Run("UpdateOverlay", func(t *testing.T) {
 		// Params(Update) overlays Create — only update columns appear, in Fields(Update) order.
-		updated := modified.Add(24 * time.Hour)
-		m.Modified = updated
+		updated := fields.Time(modified.Time().Add(24 * time.Hour))
+		m.Modified.Add(24 * time.Hour)
 		values := valuesForScan(t, m, tidal.Update, m.Fields(tidal.Update))
 		require.Equal(t, []any{uid, "/v1/items", updated}, values)
 	})

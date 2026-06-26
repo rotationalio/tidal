@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"go.rtnl.ai/tidal/errors"
+	"go.rtnl.ai/tidal/fields"
 	"go.rtnl.ai/ulid"
 )
 
@@ -104,8 +105,8 @@ func Make[M Model]() M {
 // BaseModel is embedded into most models to provide ID management and timestamps.
 type BaseModel struct {
 	ID       ulid.ULID
-	Created  time.Time
-	Modified time.Time
+	Created  fields.Timestamp
+	Modified fields.Timestamp
 }
 
 var _ Preparer = (*BaseModel)(nil)
@@ -117,11 +118,11 @@ func (b *BaseModel) Prepare(op Operation) {
 	switch op {
 	case Create:
 		b.ID = ulid.MakeSecure()
-		b.Created = time.Now().UTC()
+		b.Created = fields.Time(time.Now())
 		b.Modified = b.Created
 
 	case Update:
-		b.Modified = time.Now().UTC()
+		b.Modified.Now()
 	}
 }
 
@@ -158,17 +159,13 @@ func (b BaseModel) Equal(other BaseModel) bool {
 		return false
 	}
 
-	if !normalizeTime(b.Created).Equal(normalizeTime(other.Created)) {
+	if b.Created.Equal(other.Created) {
 		return false
 	}
 
-	if !normalizeTime(b.Modified).Equal(normalizeTime(other.Modified)) {
+	if b.Modified.Equal(other.Modified) {
 		return false
 	}
 
 	return true
-}
-
-func normalizeTime(t time.Time) time.Time {
-	return t.UTC().Truncate(time.Millisecond)
 }
