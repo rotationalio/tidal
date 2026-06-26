@@ -1,3 +1,10 @@
+// Package suite provides database-backed test harnesses for tidal packages and
+// applications, including provider-aware setup/teardown and model conformance
+// checks via [ConformsCRUD].
+//
+// Conformance equality prefers model semantics through [Equaler] and [Comparer]
+// interfaces before reflective fallback, so tests can validate DB round-trips
+// for custom field types without ad-hoc comparison code.
 package suite
 
 import (

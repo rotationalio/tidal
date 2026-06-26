@@ -45,24 +45,29 @@ func (t Timestamp) IsZero() bool {
 	return t.ts.IsZero()
 }
 
+// Equal mirrors [time.Time.Equal] for Timestamp operands.
 func (t Timestamp) Equal(other Timestamp) bool {
 	return t.ts.Equal(other.ts)
 }
 
+// Compare mirrors [time.Time.Compare] for Timestamp operands.
 func (t Timestamp) Compare(other Timestamp) int {
 	return t.ts.Compare(other.ts)
 }
 
+// Time returns the underlying [time.Time] value (already normalized when set).
 func (t Timestamp) Time() time.Time {
 	return t.ts
 }
 
-func (t *Timestamp) Add(d time.Duration) {
-	t.ts = t.ts.Add(d).UTC().Truncate(time.Millisecond)
+// Add mirrors [time.Time.Add] and returns a new normalized Timestamp.
+func (t Timestamp) Add(d time.Duration) Timestamp {
+	return Time(t.ts.Add(d))
 }
 
-func (t *Timestamp) Sub(ts time.Time) time.Duration {
-	return t.ts.Sub(ts.UTC().Truncate(time.Millisecond))
+// Sub mirrors [time.Time.Sub] for Timestamp operands.
+func (t Timestamp) Sub(other Timestamp) time.Duration {
+	return t.ts.Sub(other.ts)
 }
 
 //============================================================================

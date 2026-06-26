@@ -21,7 +21,7 @@ Import [`go.rtnl.ai/tidal`](https://pkg.go.dev/go.rtnl.ai/tidal) in application 
 | [`go.rtnl.ai/tidal/store`](https://pkg.go.dev/go.rtnl.ai/tidal/store) | `CRUD`, `Cursor`, query generation |
 | [`go.rtnl.ai/tidal/bind`](https://pkg.go.dev/go.rtnl.ai/tidal/bind) | `:name` placeholder rewriting |
 | [`go.rtnl.ai/tidal/migrations`](https://pkg.go.dev/go.rtnl.ai/tidal/migrations) | Versioned SQL schema migrations |
-| [`go.rtnl.ai/tidal/fields`](https://pkg.go.dev/go.rtnl.ai/tidal/fields) | JSON and string-array column types for `Model` structs |
+| [`go.rtnl.ai/tidal/fields`](https://pkg.go.dev/go.rtnl.ai/tidal/fields) | JSON, string-array, and normalized timestamp column types for `Model` structs |
 | [`go.rtnl.ai/tidal/suite`](https://pkg.go.dev/go.rtnl.ai/tidal/suite) | Database test harness, `ConformsCRUD`, shared `testdata`, and integration tests |
 | [`go.rtnl.ai/tidal/suite/fixtures`](https://pkg.go.dev/go.rtnl.ai/tidal/suite/fixtures) | SQL fixture loader for test suites (`fixtures.File`) |
 
@@ -275,8 +275,9 @@ The `go.rtnl.ai/tidal/fields` package provides custom column types that implemen
 | `NullJSONB` | struct with `Valid bool` and `JSONB` | A nullable JSON column where you must distinguish SQL `NULL` from JSON `null`/`{}` | `Valid` is `false` when the column is `NULL` or the JSON is `null` |
 | `StringArray` | `[]string` | A list of strings stored as a JSON array | Empty array scans to a `nil` slice |
 | `NullStringArray` | struct with `Valid bool` and `StringArray` | A nullable list of strings | `Valid` is `false` when the column is `NULL` |
+| `Timestamp` | struct wrapper around `time.Time` | UTC-normalized timestamp values with stable precision across drivers | Zero value writes/scans as SQL `NULL` |
 
-All four types marshal/scan their values as JSON, so the backing column should be a JSON-compatible type (`JSONB` or `BYTEA` in Postgres, `BLOB`/`TEXT` in SQLite).
+`JSONB`, `NullJSONB`, `StringArray`, and `NullStringArray` marshal/scan as JSON, so those columns should use JSON-compatible storage (`JSONB` or `BYTEA` in Postgres, `BLOB`/`TEXT` in SQLite). `Timestamp` stores ISO-8601 UTC values and normalizes precision when read/written.
 
 ### Defining a Model
 
@@ -419,6 +420,17 @@ if doc.Authors.Valid {
 
 A zero-value `NullStringArray{}` (or one with `Valid: false`) is written to the database as SQL `NULL`.
 
+### Timestamp
+
+`Timestamp` wraps `time.Time` with driver-friendly normalization: values are stored in UTC and truncated to millisecond precision on assignment/scan. This keeps equality behavior stable across provider round-trips.
+
+API behavior mirrors `time.Time` where possible:
+
+- `Equal(other)` and `Compare(other)` follow `time.Time.Equal` and `time.Time.Compare`.
+- `Add(d)` returns a new normalized `Timestamp` (non-mutating, like `time.Time.Add`).
+- `Sub(other)` returns a duration (like `time.Time.Sub`).
+- `Time()` returns the underlying `time.Time` value.
+
 ## Model conformance (`ConformsCRUD`)
 
 The `go.rtnl.ai/tidal/suite` package includes [`ConformsCRUD`](https://pkg.go.dev/go.rtnl.ai/tidal/suite#ConformsCRUD), a helper that checks a [`Model`](https://pkg.go.dev/go.rtnl.ai/tidal#Model) implementation against [`tidal.CRUD`](https://pkg.go.dev/go.rtnl.ai/tidal#CRUD). Use it in tests to catch `Fields`, `Params`, and `Scan` mistakes before they show up in production.
@@ -468,7 +480,6 @@ func (s *ModelTestSuite) TestUserCRUDConformance() {
   Update: func(u *User) {
    u.Name = "Updated Name" // mutate the inserted row for the update check
   },
-  Equal: nil // optional model comparison function; if nil uses a good default
  })
 }
 ```
@@ -479,13 +490,32 @@ Per-test teardown defaults to truncating tables (`TeardownTruncate`) for fast in
 
 `Create` should return a valid insert each time — generate unique values (email, slug, etc.) inside the factory. `Update` receives the same instance that was created and inserted.
 
-Provide `Equal` when the default comparison is not enough (for example JSON fields that need normalization). Otherwise the suite compares list results on the `Fields(List)` column subset and tolerates database timestamp truncation (compares times to the second).
+Conformance equality now prefers model/field semantic interfaces: implement `Equal(other T) bool` or `Compare(other T) int` on your model (and custom field types) so both Scan and RoundTrip comparisons use domain-aware equality before reflective fallback.
 
-Use these optional `CRUDConformance` fields when your model scan shape differs from default assumptions:
+Conformance comparison precedence is:
 
+1. `CRUDConformance.Equal` (deprecated override; replace with model `Equal(other)` implementations)
+2. model `Equal(other)` implementation
+3. model `Compare(other) == 0` implementation
+4. built-in reflective fallback with tidal field/time normalization rules
+
+`CRUDConformance.Equal` is still supported for backward compatibility, but deprecated in favor of interface-based equality.
+
+`CRUDConformance` supports the following fields:
+
+Required:
+
+- `Table string` — database table mapped by the model.
+- `Create func() M` — factory for a fresh model instance to insert.
+- `Update func(M)` — mutates the created model for update-phase checks.
+
+Optional:
+
+- `Phases []suite.CRUDPhase` — choose which phases to run (default: `Shape`, `Scan`, `RoundTrip`).
 - `ScanColumns map[tidal.Operation][]string` — override the exact columns fed into `Scan(op)` in Scan conformance.
 - `ScanOps []tidal.Operation` — limit which operations Scan conformance runs (default: `Create`, `Retrieve`, `Update`).
 - `FieldMap map[string]string` — map DB column name -> Go struct field name when snake_case matching is not enough (for acronyms like `client_id` -> `ClientID`, etc.).
+- `Equal func(a, b M) bool` — deprecated; use model `Equal`/`Compare` methods instead.
 
 When `ScanColumns` is not set for `Update`, conformance falls back to `Fields(Retrieve)` if `Update` is a strict subset of retrieve columns; this matches models where `Scan(Update)` reads full-row projections.
 

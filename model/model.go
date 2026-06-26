@@ -159,11 +159,11 @@ func (b BaseModel) Equal(other BaseModel) bool {
 		return false
 	}
 
-	if b.Created.Equal(other.Created) {
+	if !b.Created.Equal(other.Created) {
 		return false
 	}
 
-	if b.Modified.Equal(other.Modified) {
+	if !b.Modified.Equal(other.Modified) {
 		return false
 	}
 
