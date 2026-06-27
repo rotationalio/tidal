@@ -32,9 +32,9 @@ func Now() Timestamp {
 	return Time(time.Now())
 }
 
-// Parse parses a string into a Timestamp.
-func Parse(s string) (Timestamp, error) {
-	ts, err := time.Parse(ISO8601Milli, s)
+// Parse parses a time string in the given layout into a Timestamp.
+func Parse(layout, value string) (Timestamp, error) {
+	ts, err := time.Parse(layout, value)
 	if err != nil {
 		return Timestamp{}, err
 	}
@@ -43,12 +43,13 @@ func Parse(s string) (Timestamp, error) {
 
 // --- Setters ---
 
-// Correctly set the timestamp to the UTC timezone and truncated to millisecond precision.
+// Set the timestamp to the given time in the UTC timezone, truncated to
+// millisecond precision.
 func (t *Timestamp) Set(ts time.Time) {
 	t.ts = ts.UTC().Truncate(time.Millisecond)
 }
 
-// Sets the timestamp to the current time.
+// Sets the timestamp to the current UTC time.
 func (t *Timestamp) Now() {
 	t.ts = time.Now().UTC().Truncate(time.Millisecond)
 }
@@ -108,11 +109,6 @@ func (t Timestamp) UTC() time.Time {
 // Returns the unix epoch seconds of the timestamp.
 func (t Timestamp) Unix() int64 {
 	return t.ts.Unix()
-}
-
-// Returns the unix microseconds of the timestamp.
-func (t Timestamp) UnixMicro() int64 {
-	return t.ts.UnixMicro()
 }
 
 // Returns the unix milliseconds of the timestamp.
