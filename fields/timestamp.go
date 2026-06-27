@@ -28,12 +28,12 @@ func Time(ts time.Time) Timestamp {
 }
 
 // Returns a new Timestamp with the current time.
-func Now() Timestamp {
+func TimeNow() Timestamp {
 	return Time(time.Now())
 }
 
-// Parse parses a time string in the given layout into a Timestamp.
-func Parse(layout, value string) (Timestamp, error) {
+// Parses a time string in the given layout into a Timestamp.
+func TimeParse(layout, value string) (Timestamp, error) {
 	ts, err := time.Parse(layout, value)
 	if err != nil {
 		return Timestamp{}, err
