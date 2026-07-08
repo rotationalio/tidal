@@ -25,36 +25,20 @@ type QuerySet struct {
 // Build one with [New] and call its methods inside a [conn.Tx].
 type CRUD[M model.Model] struct {
 	Queries QuerySet
-	fields  map[model.Operation][]string
-	params  map[model.Operation][]string
+	options Options
 }
 
 // New builds a CRUD store for table using the [model.Model] type M to derive SQL and parameters.
-func New[M model.Model](table string) *CRUD[M] {
+func New[M model.Model](table string, opts ...Option) *CRUD[M] {
 	c := &CRUD[M]{
-		fields: make(map[model.Operation][]string),
-		params: make(map[model.Operation][]string),
-	}
-
-	// Precompute the parameters for the all operations that have parameters.
-	for _, op := range []model.Operation{model.List, model.Create, model.Retrieve, model.Update, model.Delete} {
-		m := model.Make[M]()
-		ps := m.Params(op)
-		if len(ps) == 0 {
-			continue
-		}
-		names := make([]string, len(ps))
-		for i, p := range ps {
-			names[i] = p.Name
-		}
-		c.params[op] = names
+		options: makeOptions(opts...),
 	}
 
 	c.Queries = QuerySet{
 		List:     c.ListQuery(table),
 		Create:   c.CreateQuery(table),
 		Retrieve: c.RetrieveQuery(table),
-		Update:   c.UpdateQuery(table, "id"),
+		Update:   c.UpdateQuery(table),
 		Delete:   c.DeleteQuery(table),
 	}
 	return c
@@ -95,7 +79,7 @@ func (c *CRUD[M]) Create(tx conn.Tx, m M) (result sql.Result, err error) {
 // Retrieve loads the row where the id column equals id.
 func (c *CRUD[M]) Retrieve(tx conn.Tx, id sql.NamedArg) (m M, err error) {
 	m = model.Make[M]()
-	query := c.Queries.Retrieve + id.Name + " = :" + id.Name
+	query := c.Queries.Retrieve + id.Name + "=:" + id.Name
 	if err = m.Scan(model.Retrieve, tx.QueryRow(query, id)); err != nil {
 		return m, err
 	}
@@ -107,55 +91,70 @@ func (c *CRUD[M]) Update(tx conn.Tx, m M) (err error) {
 	if prepare, ok := any(m).(model.Preparer); ok {
 		prepare.Prepare(model.Update)
 	}
+
 	if validator, ok := any(m).(model.Validator); ok {
 		if err = validator.Validate(model.Update); err != nil {
 			return err
 		}
 	}
+
+	// Construct the update query from the identifier if implemented, otherwise use the default identifier field.
+	query := c.Queries.Update
+	params := m.Params(model.Update)
+	if identifier, ok := any(m).(model.Identifier); ok {
+		// Get the identifier from the model and ensure it is in the parameters list.
+		identifier := identifier.Identifier()
+		query += identifier.Name + "=:" + identifier.Name
+	} else {
+		query += c.options.IDField + "=:" + c.options.IDField
+	}
+
+	// Add a limit clause to ensure only one row is updated if the option is enabled.
+	if c.options.UpdateLimit {
+		query += " LIMIT 1"
+	}
+
 	var result sql.Result
-	if result, err = tx.Exec(c.Queries.Update, m.Params(model.Update)...); err != nil {
+	if result, err = tx.Exec(query, params...); err != nil {
 		return err
 	}
+
 	if nRows, _ := result.RowsAffected(); nRows == 0 {
 		return errors.ErrNotFound
 	}
+
 	return nil
 }
 
 // Delete removes the row where the id column equals id.
 func (c *CRUD[M]) Delete(tx conn.Tx, id sql.NamedArg) (result sql.Result, err error) {
-	query := c.Queries.Delete + id.Name + " = :" + id.Name
+	query := c.Queries.Delete + id.Name + "=:" + id.Name
 	return tx.Exec(query, id)
 }
 
 // Fields returns the column names for op, cached after the first call.
 func (c *CRUD[M]) Fields(op model.Operation) (fields []string) {
-	fields, ok := c.fields[op]
-	if !ok {
-		m := model.Make[M]()
-		fields = m.Fields(op)
-		c.fields[op] = fields
-	}
-	return fields
+	m := model.Make[M]()
+	return m.Fields(op)
 }
 
 // Params returns column names and :name placeholders for op.
 func (c *CRUD[M]) Params(op model.Operation) (fields []string, placeholders []string) {
-	names, ok := c.params[op]
-	if !ok {
-		m := model.Make[M]()
-		ps := m.Params(op)
-		names = make([]string, len(ps))
-		for i, p := range ps {
-			names[i] = p.Name
-		}
-		c.params[op] = names
+	m := model.Make[M]()
+	params := m.Params(op)
+	if len(params) == 0 {
+		return nil, nil
 	}
-	placeholders = make([]string, len(names))
-	for i, name := range names {
-		placeholders[i] = ":" + name
+
+	fields = make([]string, len(params))
+	placeholders = make([]string, len(params))
+
+	for i, param := range params {
+		fields[i] = param.Name
+		placeholders[i] = ":" + param.Name
 	}
-	return names, placeholders
+
+	return fields, placeholders
 }
 
 // ListQuery builds the SELECT used by [CRUD.List].
@@ -175,16 +174,16 @@ func (c *CRUD[M]) RetrieveQuery(table string) string {
 }
 
 // UpdateQuery builds the UPDATE used by [CRUD.Update].
-func (c *CRUD[M]) UpdateQuery(table string, fieldID string) string {
+func (c *CRUD[M]) UpdateQuery(table string) string {
 	fields, placeholders := c.Params(model.Update)
 	setters := make([]string, 0, len(fields))
 	for i, field := range fields {
-		if field == fieldID {
+		if field == c.options.IDField {
 			continue
 		}
 		setters = append(setters, fmt.Sprintf("%s=%s", field, placeholders[i]))
 	}
-	return fmt.Sprintf("UPDATE %s SET %s WHERE %s=:%s", table, strings.Join(setters, ", "), fieldID, fieldID)
+	return fmt.Sprintf("UPDATE %s SET %s WHERE ", table, strings.Join(setters, ", "))
 }
 
 // DeleteQuery builds the DELETE prefix used by [CRUD.Delete] (caller appends the id predicate).
