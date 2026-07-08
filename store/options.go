@@ -18,12 +18,15 @@ type Options struct {
 
 type Option func(*Options)
 
-func WithNoUpdateLimit() Option {
+// For Update operations, and a LIMIT 1 clause to the end of the query. This is useful
+// to ensure only one row is updated but is not available in all databases (e.g. SQLite).
+func WithUpdateLimit() Option {
 	return func(o *Options) {
-		o.UpdateLimit = false
+		o.UpdateLimit = true
 	}
 }
 
+// Specify the default immutable identifier field for updates.
 func WithIDField(field string) Option {
 	return func(o *Options) {
 		o.IDField = field
@@ -32,7 +35,7 @@ func WithIDField(field string) Option {
 
 func makeOptions(opts ...Option) Options {
 	o := Options{
-		UpdateLimit: true,
+		UpdateLimit: false,
 		IDField:     "id",
 	}
 	for _, opt := range opts {

@@ -27,6 +27,7 @@ var (
 	ErrMissingID          = errors.New("missing ID")
 	ErrInvalidIdentifier  = errors.New("invalid identifier for model or reference")
 	ErrMissingAssociation = errors.New("associated records not cached on the model")
+	ErrNoIdentifiers      = errors.New("no identifiers found for model update")
 )
 
 //============================================================================

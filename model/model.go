@@ -87,8 +87,10 @@ type Validator interface {
 // If the model implements this interface, the returned named arg will be used in the
 // update query and the immutable identifier field will be ignored (e.g. ID).
 // This is used to identify the row for update operations.
+//
+// NOTE: in the case of a composite identifier, return all identifier fields.
 type Identifier interface {
-	Identifier() sql.NamedArg
+	Identifier() []sql.NamedArg
 }
 
 //============================================================================

@@ -103,10 +103,55 @@ func (c *CRUD[M]) Update(tx conn.Tx, m M) (err error) {
 	params := m.Params(model.Update)
 	if identifier, ok := any(m).(model.Identifier); ok {
 		// Get the identifier from the model and ensure it is in the parameters list.
-		identifier := identifier.Identifier()
-		query += identifier.Name + "=:" + identifier.Name
+		var identifiers []sql.NamedArg
+		if identifiers = identifier.Identifier(); len(identifiers) == 0 {
+			return errors.ErrNoIdentifiers
+		}
+
+		// Check that all identifiers are in the parameters list and add them if not.
+		for _, identifier := range identifiers {
+			found := false
+			for _, param := range params {
+				if param.Name == identifier.Name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				params = append(params, identifier)
+			}
+		}
+
+		// Construct the WHERE clause from the identifiers.
+		// For performance, only use the string builder for composite identifiers.
+		if len(identifiers) == 1 {
+			query += identifiers[0].Name + "=:" + identifiers[0].Name
+		} else {
+			sb := strings.Builder{}
+			for i, identifier := range identifiers {
+				if i > 0 {
+					sb.WriteString(" AND ")
+				}
+				sb.WriteString(identifier.Name + "=:" + identifier.Name)
+			}
+			query += sb.String()
+		}
 	} else {
+		// Use the default identifier field.
 		query += c.options.IDField + "=:" + c.options.IDField
+
+		// Check that the default identifier field is in the parameters list.
+		found := false
+		for _, param := range params {
+			if param.Name == c.options.IDField {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return fmt.Errorf("default identifier field %s not found in update parameters", c.options.IDField)
+		}
 	}
 
 	// Add a limit clause to ensure only one row is updated if the option is enabled.
