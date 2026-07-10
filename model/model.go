@@ -82,7 +82,7 @@ type Validator interface {
 	Validate(Operation) error
 }
 
-// Identifier is an interface for models that have a unique identifier that is not the
+// Identifiers is an interface for models that have a unique identifier that is not the
 // default immutable identifier field such as a slug field or fetching a user by email.
 // If the model implements this interface, the returned named arg will be used in the
 // update query and the immutable identifier field will be ignored (e.g. ID).
@@ -90,7 +90,7 @@ type Validator interface {
 //
 // NOTE: in the case of a composite identifier, return all identifier fields.
 type Identifier interface {
-	Identifier() []sql.NamedArg
+	Identifiers() []sql.NamedArg
 }
 
 //============================================================================

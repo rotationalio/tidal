@@ -104,7 +104,7 @@ func (c *CRUD[M]) Update(tx conn.Tx, m M) (err error) {
 	if identifier, ok := any(m).(model.Identifier); ok {
 		// Get the identifier from the model and ensure it is in the parameters list.
 		var identifiers []sql.NamedArg
-		if identifiers = identifier.Identifier(); len(identifiers) == 0 {
+		if identifiers = identifier.Identifiers(); len(identifiers) == 0 {
 			return errors.ErrNoIdentifiers
 		}
 
@@ -150,7 +150,7 @@ func (c *CRUD[M]) Update(tx conn.Tx, m M) (err error) {
 		}
 
 		if !found {
-			return fmt.Errorf("default identifier field %s not found in update parameters", c.options.IDField)
+			return fmt.Errorf("default identifier field %q not found in update parameters", c.options.IDField)
 		}
 	}
 
