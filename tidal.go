@@ -112,11 +112,19 @@ type (
 	Filter       = filter.Filter
 	CustomFilter = filter.CustomFilter
 	ListFilter   = filter.ListFilter
-	Where        = filter.Where
+	WhereGroup   = filter.WhereGroup
 	WhereOp      = builder.WhereOp
 
 	// Deprecated: use [CustomFilter] instead.
 	Clause = CustomFilter
+)
+
+var (
+	NewFilter = filter.New
+	Where     = filter.Where
+	OrderBy   = filter.OrderBy
+	Limit     = filter.Limit
+	Offset    = filter.Offset
 )
 
 const (
