@@ -186,6 +186,11 @@ func renderNode(node any, params *[]sql.NamedArg, idx *int) string {
 				placeholders[i] = ":" + name
 			}
 			return fmt.Sprintf("%s IN (%s)", n.field, strings.Join(placeholders, ", "))
+		case Is, IsNot:
+			if sym, ok := n.value.(Literal); ok {
+				return fmt.Sprintf("%s %s %s", n.field, n.op, sym)
+			}
+			fallthrough
 		default:
 			// All other operators are rendered as: "field op value"
 			*idx++

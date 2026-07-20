@@ -1,7 +1,7 @@
 // Package filter builds ANSI SQL list-query clauses for filtering, sorting, and pagination.
 //
 // Use [Filter] for WHERE, ORDER BY, LIMIT, and OFFSET. Use [CustomFilter] when you
-// need hand-written SQL (for example GROUP BY or case-insensitive LIKE via LOWER()).
+// need hand-written SQL (for example GROUP BY).
 //
 // Building a composable [Filter] (can use tidal aliases):
 //
@@ -56,18 +56,35 @@ type WhereGroup = builder.Where
 // WhereOp is a comparison operator in a WHERE condition.
 type WhereOp = builder.WhereOp
 
+// Literal is a SQL keyword used as the right-hand side of [Is] and [IsNot]
+// predicates.
+type Literal = builder.Literal
+
+// SQL literals for [Is] and [IsNot] predicates.
+const (
+	Null    = builder.Null
+	True    = builder.True
+	False   = builder.False
+	Unknown = builder.Unknown
+)
+
 // WHERE comparison operators.
 const (
-	Eq        = builder.Eq
-	Ne        = builder.Ne
-	Gt        = builder.Gt
-	Lt        = builder.Lt
-	Gte       = builder.Gte
-	Lte       = builder.Lte
-	Like      = builder.Like
-	IsNull    = builder.IsNull
-	IsNotNull = builder.IsNotNull
-	In        = builder.In
+	Eq                = builder.Eq
+	Ne                = builder.Ne
+	Gt                = builder.Gt
+	Lt                = builder.Lt
+	Gte               = builder.Gte
+	Lte               = builder.Lte
+	Like              = builder.Like
+	ILike             = builder.ILike
+	IsNull            = builder.IsNull    // Deprecated: use [Is] with [Null] instead.
+	IsNotNull         = builder.IsNotNull // Deprecated: use [IsNot] with [Null] instead.
+	In                = builder.In
+	Is                = builder.Is
+	IsNot             = builder.IsNot
+	IsDistinctFrom    = builder.IsDistinctFrom
+	IsNotDistinctFrom = builder.IsNotDistinctFrom
 )
 
 //============================================================================

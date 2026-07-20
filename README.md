@@ -160,7 +160,18 @@ Start a filter with a constructor instead of the `&tidal.Filter{}` literal. Each
 
 These re-export [`filter.New`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#New), [`filter.Where`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Where), [`filter.OrderBy`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#OrderBy), [`filter.Limit`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Limit), and [`filter.Offset`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Offset) (root uses `NewFilter` because `tidal.New` builds a CRUD store). Import `go.rtnl.ai/tidal/filter` to call them under the `filter.` prefix instead.
 
-WHERE operators: `Eq`, `Ne`, `Gt`, `Lt`, `Gte`, `Lte`, `Like`, `In`, `IsNull`, and `IsNotNull`. An `In` condition with an empty slice is omitted. For case-insensitive matching, use `LOWER(column) LIKE LOWER(:param)` in a [`CustomFilter`](https://pkg.go.dev/go.rtnl.ai/tidal#CustomFilter) or apply your own normalization to the values before adding to a [`Filter`](https://pkg.go.dev/go.rtnl.ai/tidal#Filter).
+WHERE operators: `Eq`, `Ne`, `Gt`, `Lt`, `Gte`, `Lte`, `Like`, `ILike`, `In`, `Is`, `IsNot`, `IsDistinctFrom`, and `IsNotDistinctFrom`. An `In` condition with an empty slice is omitted. `ILike`, `Is`, `IsNot`, `IsDistinctFrom`, and `IsNotDistinctFrom` are not supported by every database provider; invalid combinations fail at query time.
+
+Use `Is` and `IsNot` with a [`Literal`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Literal) (`Null`, `True`, `False`, `Unknown`) for SQL keyword predicates such as `IS NULL` and `IS NOT TRUE`. Pass any other value to compare with a bound parameter (for example `status IS :w1`). PostgreSQL accepts `Literal` values only with `Is` and `IsNot`; SQLite also allows arbitrary bound values. `IsNull` and `IsNotNull` are deprecated; use `Is` with `Null` or `IsNot` with `Null` instead.
+
+`IsDistinctFrom` and `IsNotDistinctFrom` render null-safe comparisons with a bound parameter (for example `a IS DISTINCT FROM :w1`). Use `ILike` for case-insensitive pattern matching on providers that support it (for example PostgreSQL).
+
+```go
+f := tidal.Where("revoked", tidal.Is, tidal.Null).
+ And("deleted_at", tidal.IsNot, tidal.Null).
+ And("active", tidal.Is, tidal.True)
+// WHERE revoked IS NULL AND deleted_at IS NOT NULL AND active IS TRUE
+```
 
 Flat `And`/`Or` chains follow SQL precedence: `Where("a", Eq, 1).And("b", Eq, 2).Or("c", Eq, 3)` renders `a = :w1 AND b = :w2 OR c = :w3`, which SQL parses as `(a AND b) OR c`. Use `AndGroup` or `OrGroup` for explicit grouping.
 

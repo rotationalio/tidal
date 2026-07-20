@@ -118,6 +118,13 @@ func TestFilterWhere(t *testing.T) {
 		require.Equal(t, "WHERE name LIKE :w1 AND email LIKE :w2", f.Clause())
 	})
 
+	t.Run("ILikeOperator", func(t *testing.T) {
+		f := (&Filter{}).Where("name", ILike, "%ada%")
+
+		require.Equal(t, "WHERE name ILIKE :w1", f.Clause())
+		require.Equal(t, []sql.NamedArg{sql.Named("w1", "%ada%")}, f.Params())
+	})
+
 	t.Run("InOperator", func(t *testing.T) {
 		f := (&Filter{}).
 			Where("status", Eq, "active").
@@ -148,7 +155,43 @@ func TestFilterWhere(t *testing.T) {
 		require.Empty(t, f.Params())
 	})
 
-	t.Run("NullOperators", func(t *testing.T) {
+	t.Run("IsIsNotLiterals", func(t *testing.T) {
+		f := (&Filter{}).
+			Where("revoked", Is, Null).
+			And("deleted_at", IsNot, Null).
+			And("active", Is, True).
+			And("disabled", IsNot, False).
+			And("maybe", Is, Unknown)
+
+		require.Equal(t, "WHERE revoked IS NULL AND deleted_at IS NOT NULL AND active IS TRUE AND disabled IS NOT FALSE AND maybe IS UNKNOWN", f.Clause())
+		require.Empty(t, f.Params())
+	})
+
+	t.Run("IsWithValue", func(t *testing.T) {
+		f := (&Filter{}).
+			Where("status", Is, "active").
+			And("legacy", IsNot, true)
+
+		require.Equal(t, "WHERE status IS :w1 AND legacy IS NOT :w2", f.Clause())
+		require.Equal(t, []sql.NamedArg{
+			sql.Named("w1", "active"),
+			sql.Named("w2", true),
+		}, f.Params())
+	})
+
+	t.Run("IsDistinctFromOperators", func(t *testing.T) {
+		f := (&Filter{}).
+			Where("a", IsDistinctFrom, nil).
+			And("b", IsNotDistinctFrom, "active")
+
+		require.Equal(t, "WHERE a IS DISTINCT FROM :w1 AND b IS NOT DISTINCT FROM :w2", f.Clause())
+		require.Equal(t, []sql.NamedArg{
+			sql.Named("w1", nil),
+			sql.Named("w2", "active"),
+		}, f.Params())
+	})
+
+	t.Run("DeprecatedNullOperators", func(t *testing.T) {
 		f := (&Filter{}).
 			Where("revoked", IsNull, nil).
 			And("deleted_at", IsNotNull, nil)

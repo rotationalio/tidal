@@ -113,13 +113,11 @@ type (
 	CustomFilter = filter.CustomFilter
 	ListFilter   = filter.ListFilter
 	WhereGroup   = filter.WhereGroup
-	WhereOp      = builder.WhereOp
-
-	// Deprecated: use [CustomFilter] instead.
-	Clause = CustomFilter
 )
 
 var (
+	// Filter constructors
+
 	NewFilter = filter.New
 	Where     = filter.Where
 	OrderBy   = filter.OrderBy
@@ -130,16 +128,28 @@ var (
 const (
 	// Where Operations
 
-	Eq        = builder.Eq
-	Ne        = builder.Ne
-	Gt        = builder.Gt
-	Lt        = builder.Lt
-	Gte       = builder.Gte
-	Lte       = builder.Lte
-	Like      = builder.Like
-	IsNull    = builder.IsNull
-	IsNotNull = builder.IsNotNull
-	In        = builder.In
+	Eq                = builder.Eq
+	Ne                = builder.Ne
+	Gt                = builder.Gt
+	Lt                = builder.Lt
+	Gte               = builder.Gte
+	Lte               = builder.Lte
+	Like              = builder.Like
+	ILike             = builder.ILike
+	IsNull            = builder.IsNull    // Deprecated: use [Is] with [Null] instead.
+	IsNotNull         = builder.IsNotNull // Deprecated: use [IsNot] with [Null] instead.
+	In                = builder.In
+	Is                = builder.Is
+	IsNot             = builder.IsNot
+	IsDistinctFrom    = builder.IsDistinctFrom
+	IsNotDistinctFrom = builder.IsNotDistinctFrom
+
+	// Literals (used with [Is] and [IsNot])
+
+	Null    = builder.Null
+	True    = builder.True
+	False   = builder.False
+	Unknown = builder.Unknown
 
 	// Ordering
 
