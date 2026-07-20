@@ -50,8 +50,8 @@ type ListFilter interface {
 	Params() []sql.NamedArg
 }
 
-// Where builds a grouped WHERE expression inside [Filter.AndGroup] and [Filter.OrGroup].
-type Where = builder.Where
+// WhereGroup builds a grouped WHERE expression inside [Filter.AndGroup] and [Filter.OrGroup].
+type WhereGroup = builder.Where
 
 // WhereOp is a comparison operator in a WHERE condition.
 type WhereOp = builder.WhereOp
@@ -96,6 +96,35 @@ type Filter struct {
 func (f *Filter) resetCache() {
 	f.sql = ""
 	f.params = nil
+}
+
+//============================================================================
+// Filter Constructors
+//============================================================================
+
+// Create a new filter.
+func New() *Filter {
+	return &Filter{}
+}
+
+// Create a new filter with a WHERE clause.
+func Where(field string, op WhereOp, value any) *Filter {
+	return New().Where(field, op, value)
+}
+
+// Create a new filter with an ORDER BY clause.
+func OrderBy(columns ...string) *Filter {
+	return New().OrderBy(columns...)
+}
+
+// Create a new filter with a LIMIT clause.
+func Limit(n int) *Filter {
+	return New().Limit(n)
+}
+
+// Create a new filter with an OFFSET clause.
+func Offset(n int) *Filter {
+	return New().Offset(n)
 }
 
 //============================================================================
@@ -165,13 +194,13 @@ func (f *Filter) Or(field string, op WhereOp, value any) *Filter {
 }
 
 // Appends a parenthesized group joined with AND to the current WHERE clause.
-func (f *Filter) AndGroup(fn func(*Where)) *Filter {
+func (f *Filter) AndGroup(fn func(*WhereGroup)) *Filter {
 	f.ensureWhere().AndGroup(fn)
 	return f
 }
 
 // Appends a parenthesized group joined with OR to the current WHERE clause.
-func (f *Filter) OrGroup(fn func(*Where)) *Filter {
+func (f *Filter) OrGroup(fn func(*WhereGroup)) *Filter {
 	f.ensureWhere().OrGroup(fn)
 	return f
 }

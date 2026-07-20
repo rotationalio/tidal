@@ -78,7 +78,7 @@ func TestFilterWhere(t *testing.T) {
 	t.Run("AndGroup", func(t *testing.T) {
 		f := (&Filter{}).
 			Where("status", Eq, "active").
-			AndGroup(func(g *Where) {
+			AndGroup(func(g *WhereGroup) {
 				g.Where("role", Eq, "admin").Or("role", Eq, "editor")
 			})
 
@@ -93,7 +93,7 @@ func TestFilterWhere(t *testing.T) {
 	t.Run("OrGroup", func(t *testing.T) {
 		f := (&Filter{}).
 			Where("status", Eq, "active").
-			OrGroup(func(g *Where) {
+			OrGroup(func(g *WhereGroup) {
 				g.Where("role", Eq, "admin").And("verified", Eq, true)
 			})
 
@@ -179,7 +179,7 @@ func TestFilterWhereMisuse(t *testing.T) {
 
 	t.Run("OrGroupBeforeWhereBecomesRootGroup", func(t *testing.T) {
 		// An empty root accepts the group directly; no leading OR is emitted.
-		f := (&Filter{}).OrGroup(func(g *Where) {
+		f := (&Filter{}).OrGroup(func(g *WhereGroup) {
 			g.Where("role", Eq, "admin")
 		})
 		require.Equal(t, "WHERE (role = :w1)", f.Clause())
@@ -187,7 +187,7 @@ func TestFilterWhereMisuse(t *testing.T) {
 
 	t.Run("AndGroupBeforeWhereBecomesRootGroup", func(t *testing.T) {
 		// An empty root accepts the group directly; no leading AND is emitted.
-		f := (&Filter{}).AndGroup(func(g *Where) {
+		f := (&Filter{}).AndGroup(func(g *WhereGroup) {
 			g.Where("role", Eq, "admin")
 		})
 		require.Equal(t, "WHERE (role = :w1)", f.Clause())
@@ -204,7 +204,7 @@ func TestFilterWhereMisuse(t *testing.T) {
 	t.Run("OrGroupThenWhereReplacesEntireClause", func(t *testing.T) {
 		// Where replaces the entire clause
 		f := (&Filter{}).
-			OrGroup(func(g *Where) {
+			OrGroup(func(g *WhereGroup) {
 				g.Where("role", Eq, "admin")
 			}).
 			Where("status", Eq, "active")
@@ -214,14 +214,14 @@ func TestFilterWhereMisuse(t *testing.T) {
 	t.Run("EmptyOrGroupThenWhere", func(t *testing.T) {
 		// Where replaces the entire clause
 		f := (&Filter{}).
-			OrGroup(func(g *Where) {}).
+			OrGroup(func(g *WhereGroup) {}).
 			Where("status", Eq, "active")
 		require.Equal(t, "WHERE status = :w1", f.Clause())
 	})
 
 	t.Run("EmptyOrGroupOnly", func(t *testing.T) {
 		// An empty group is ignored; no OR keyword is emitted.
-		f := (&Filter{}).OrGroup(func(g *Where) {})
+		f := (&Filter{}).OrGroup(func(g *WhereGroup) {})
 		require.Empty(t, f.Clause())
 		require.Empty(t, f.Params())
 	})
@@ -236,7 +236,7 @@ func TestFilterWhereMisuse(t *testing.T) {
 
 	t.Run("OrGroupOrBeforeWhereInGroup", func(t *testing.T) {
 		// Inside a group, Or starts the sub-expression; Where replaces it.
-		f := (&Filter{}).OrGroup(func(g *Where) {
+		f := (&Filter{}).OrGroup(func(g *WhereGroup) {
 			g.Or("role", Eq, "admin").Where("status", Eq, "active")
 		})
 		require.Equal(t, "WHERE (status = :w1)", f.Clause())
@@ -246,7 +246,7 @@ func TestFilterWhereMisuse(t *testing.T) {
 		// Where replaces the entire clause
 		f := (&Filter{}).
 			Or("legacy", Eq, true).
-			OrGroup(func(g *Where) {
+			OrGroup(func(g *WhereGroup) {
 				g.Where("role", Eq, "admin")
 			}).
 			Where("status", Eq, "active")
@@ -266,23 +266,23 @@ func TestFilterComprehensive(t *testing.T) {
 		And("deleted_at", Eq, nil).
 		And("organization_id", Ne, "").
 		And("plan_id", In, []string{"starter", "pro", "enterprise"}).
-		AndGroup(func(g *Where) {
+		AndGroup(func(g *WhereGroup) {
 			g.Where("role", Eq, "admin").
 				Or("role", Eq, "editor").
 				Or("role", Eq, "viewer").
-				AndGroup(func(g *Where) {
+				AndGroup(func(g *WhereGroup) {
 					g.Where("verified", Eq, true).
 						And("mfa_enabled", Eq, true).
-						OrGroup(func(g *Where) {
+						OrGroup(func(g *WhereGroup) {
 							g.Where("sso_provider", Eq, "okta").
 								And("sso_external_id", Ne, "")
 						})
 				})
 		}).
-		OrGroup(func(g *Where) {
+		OrGroup(func(g *WhereGroup) {
 			g.Where("tier", Gte, 2).
 				And("name", Like, "%pro%").
-				AndGroup(func(g *Where) {
+				AndGroup(func(g *WhereGroup) {
 					g.Where("billing_status", Eq, "current").
 						Or("trial_ends_at", Gt, "2026-01-01")
 				})
@@ -292,20 +292,20 @@ func TestFilterComprehensive(t *testing.T) {
 		And("age", Lte, 65).
 		And("score", Lt, 100).
 		And("rating", Gte, 3.5).
-		OrGroup(func(g *Where) {
+		OrGroup(func(g *WhereGroup) {
 			g.Where("region", Eq, "us").
 				Or("region", Eq, "eu").
 				And("featured", Eq, true).
-				AndGroup(func(g *Where) {
+				AndGroup(func(g *WhereGroup) {
 					g.Where("campaign", Eq, "spring").
 						Or("campaign", Eq, "summer").
 						Or("tags", Like, "%launch%")
 				})
 		}).
-		OrGroup(func(g *Where) {
+		OrGroup(func(g *WhereGroup) {
 			g.Where("invited_by", Ne, "").
 				And("invite_accepted_at", Eq, nil).
-				OrGroup(func(g *Where) {
+				OrGroup(func(g *WhereGroup) {
 					g.Where("signup_source", Eq, "referral").
 						And("referral_code", Like, "REF-%")
 				})
