@@ -142,28 +142,38 @@ loaded, err := crud.Retrieve(tx, sql.Named("id", user.ID))
 err = crud.Update(tx, user)
 _, err = crud.Delete(tx, sql.Named("id", user.ID))
 
-cursor, err := crud.List(tx, (&tidal.Filter{}).OrderBy("name").Limit(10))
+cursor, err := crud.List(tx, tidal.OrderBy("name").Limit(10))
 users, err := cursor.List()
 ```
 
 [`Filter`](https://pkg.go.dev/go.rtnl.ai/tidal#Filter) builds ANSI SQL `WHERE`, `ORDER BY`, `LIMIT`, and `OFFSET` clauses. Calling `Where` replaces any previous WHERE clause (like `OrderBy`, `Limit`, and `Offset`). `And`, `Or`, `AndGroup`, and `OrGroup` append to the current WHERE clause.
+
+Start a filter with a constructor instead of the `&tidal.Filter{}` literal. Each constructor returns a `*Filter` you can keep chaining from:
+
+| Constructor | Creates a filter with |
+| --- | --- |
+| [`tidal.NewFilter()`](https://pkg.go.dev/go.rtnl.ai/tidal#NewFilter) | no clauses (empty filter) |
+| [`tidal.Where(field, op, value)`](https://pkg.go.dev/go.rtnl.ai/tidal#Where) | an initial `WHERE` condition |
+| [`tidal.OrderBy(columns...)`](https://pkg.go.dev/go.rtnl.ai/tidal#OrderBy) | an `ORDER BY` clause |
+| [`tidal.Limit(n)`](https://pkg.go.dev/go.rtnl.ai/tidal#Limit) | a `LIMIT` clause |
+| [`tidal.Offset(n)`](https://pkg.go.dev/go.rtnl.ai/tidal#Offset) | an `OFFSET` clause |
+
+These re-export [`filter.New`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#New), [`filter.Where`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Where), [`filter.OrderBy`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#OrderBy), [`filter.Limit`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Limit), and [`filter.Offset`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Offset) (root uses `NewFilter` because `tidal.New` builds a CRUD store). Import `go.rtnl.ai/tidal/filter` to call them under the `filter.` prefix instead.
 
 WHERE operators: `Eq`, `Ne`, `Gt`, `Lt`, `Gte`, `Lte`, `Like`, `In`, `IsNull`, and `IsNotNull`. An `In` condition with an empty slice is omitted. For case-insensitive matching, use `LOWER(column) LIKE LOWER(:param)` in a [`CustomFilter`](https://pkg.go.dev/go.rtnl.ai/tidal#CustomFilter) or apply your own normalization to the values before adding to a [`Filter`](https://pkg.go.dev/go.rtnl.ai/tidal#Filter).
 
 Flat `And`/`Or` chains follow SQL precedence: `Where("a", Eq, 1).And("b", Eq, 2).Or("c", Eq, 3)` renders `a = :w1 AND b = :w2 OR c = :w3`, which SQL parses as `(a AND b) OR c`. Use `AndGroup` or `OrGroup` for explicit grouping.
 
 ```go
-// Where replaces any previous WHERE clause.
-f := (&tidal.Filter{}).
- Where("status", tidal.Eq, "active").
+// tidal.Where starts the filter; a second Where replaces the first WHERE clause.
+f := tidal.Where("status", tidal.Eq, "active").
  Where("role", tidal.Eq, "admin") // only role = :w1 remains
 
 // And/Or/AndGroup/OrGroup append to the current WHERE clause.
-f = (&tidal.Filter{}).
- Where("status", tidal.Eq, "active").
+f = tidal.Where("status", tidal.Eq, "active").
  And("id", tidal.In, []int64{1, 2, 3}).
  And("age", tidal.Gte, 18).
- AndGroup(func(g *tidal.Where) {
+ AndGroup(func(g *tidal.WhereGroup) {
   g.Where("role", tidal.Eq, "admin").Or("role", tidal.Eq, "editor")
  }).
  OrderBy("-created").
