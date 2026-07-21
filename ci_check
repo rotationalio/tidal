@@ -5,19 +5,27 @@
 ###################
 
 # Description: Runs CI checks for the tidal repository. Requires a Postgres database to be running per the README.md.
-# Usage: [POSTGRES_DATABASE_URL=...] ./ci_check
+# Usage: [POSTGRES_DATABASE_URL=...] ./ci_check [-c]
 #
 # This script runs the following checks, setting a default DB URL when needed:
 # - go fmt
 # - go vet
 # - staticcheck
-# - go test
+# - go test (if -c is set, runs go test with regular caching, otherwise runs go test with '-count=1' for clean testing)
 
 set -u -o pipefail
 
 cd "$(dirname "$0")" || exit 1
 
 export POSTGRES_DATABASE_URL="${POSTGRES_DATABASE_URL:-postgres://rotational:theeaglefliesatdawn@localhost:5432/postgres?sslmode=disable}"
+
+if [[ "${1:-}" == "-c" ]]; then
+  cached=true
+  gotestargs=("-race" "-v")
+else
+  cached=false
+  gotestargs=("-race" "-v" "-count=1")
+fi
 
 failed=()
 
@@ -26,7 +34,7 @@ run_step() {
   shift
 
   echo -e "\033[33mRunning: $name\033[0m"
-  if "$@" ; then
+  if "$@"; then
     echo -e "\033[32mPASS: $name\033[0m"
   else
     echo -e "\033[31mFAIL: $name\033[0m"
@@ -37,7 +45,7 @@ run_step() {
 run_step "gofmt check" bash -c "[[ -z \"$(gofmt -l .)\" ]]"
 run_step "go vet" go vet ./...
 run_step "staticcheck" bash -c 'command -v staticcheck >/dev/null 2>&1 && staticcheck ./...'
-run_step "go test" go test ./... -count=1 -race -v
+run_step "go test (cached: $cached)" go test ./... "${gotestargs[@]}"
 
 if [[ "${#failed[@]}" -eq 0 ]]; then
   echo -e "\n\033[32mAll checks passed.\033[0m"
