@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"go.rtnl.ai/tidal/conn"
@@ -56,6 +57,15 @@ func (c *CRUD[M]) List(tx conn.Tx, filter filter.ListFilter) (_ Cursor[M], err e
 		params = filter.Params()
 	}
 
+	if c.options.Debug {
+		attrs := make([]any, 0, len(params)+1)
+		attrs = append(attrs, slog.String("query", query))
+		for _, param := range params {
+			attrs = append(attrs, slog.Any(param.Name, param.Value))
+		}
+		slog.Debug("List Query", attrs...)
+	}
+
 	var rows *sql.Rows
 	if rows, err = tx.Query(query, params...); err != nil {
 		return nil, err
@@ -73,6 +83,17 @@ func (c *CRUD[M]) Create(tx conn.Tx, m M) (result sql.Result, err error) {
 			return nil, err
 		}
 	}
+
+	if c.options.Debug {
+		params := m.Params(model.Create)
+		attrs := make([]any, 0, len(params)+1)
+		attrs = append(attrs, slog.String("query", c.Queries.Create))
+		for _, param := range params {
+			attrs = append(attrs, slog.Any(param.Name, param.Value))
+		}
+		slog.Debug("List Query", attrs...)
+	}
+
 	return tx.Exec(c.Queries.Create, m.Params(model.Create)...)
 }
 
@@ -80,6 +101,11 @@ func (c *CRUD[M]) Create(tx conn.Tx, m M) (result sql.Result, err error) {
 func (c *CRUD[M]) Retrieve(tx conn.Tx, id sql.NamedArg) (m M, err error) {
 	m = model.Make[M]()
 	query := c.Queries.Retrieve + id.Name + "=:" + id.Name
+
+	if c.options.Debug {
+		slog.Debug("Retrieve Query", slog.String("query", query), slog.Any(id.Name, id.Value))
+	}
+
 	if err = m.Scan(model.Retrieve, tx.QueryRow(query, id)); err != nil {
 		return m, err
 	}
@@ -159,6 +185,15 @@ func (c *CRUD[M]) Update(tx conn.Tx, m M) (err error) {
 		query += " LIMIT 1"
 	}
 
+	if c.options.Debug {
+		attrs := make([]any, 0, len(params)+1)
+		attrs = append(attrs, slog.String("query", query))
+		for _, param := range params {
+			attrs = append(attrs, slog.Any(param.Name, param.Value))
+		}
+		slog.Debug("Update Query", attrs...)
+	}
+
 	var result sql.Result
 	if result, err = tx.Exec(query, params...); err != nil {
 		return err
@@ -174,6 +209,11 @@ func (c *CRUD[M]) Update(tx conn.Tx, m M) (err error) {
 // Delete removes the row where the id column equals id.
 func (c *CRUD[M]) Delete(tx conn.Tx, id sql.NamedArg) (result sql.Result, err error) {
 	query := c.Queries.Delete + id.Name + "=:" + id.Name
+
+	if c.options.Debug {
+		slog.Debug("Delete Query", slog.String("query", query), slog.Any(id.Name, id.Value))
+	}
+
 	return tx.Exec(query, id)
 }
 

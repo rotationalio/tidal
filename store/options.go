@@ -14,6 +14,9 @@ type Options struct {
 	// then never changed. If you want to use a unique field for updates that can change,
 	// e.g. slug or email, then you should implement the model.Identifier interface.
 	IDField string
+
+	// If debug is true, the CRUD will print the SQL queries and parameters to the console.
+	Debug bool
 }
 
 type Option func(*Options)
@@ -30,6 +33,13 @@ func WithUpdateLimit() Option {
 func WithIDField(field string) Option {
 	return func(o *Options) {
 		o.IDField = field
+	}
+}
+
+// If debug is true, the CRUD will print the SQL queries and parameters to the console.
+func WithDebug() Option {
+	return func(o *Options) {
+		o.Debug = true
 	}
 }
 
