@@ -306,8 +306,8 @@ func (f *Filter) Prefix(tableAlias string, fields ...string) *Filter {
 		f.whereClause.Prefix(tableAlias, fields...)
 	}
 
-	for _, order := range f.ordering {
-		order.Prefix(tableAlias, fields...)
+	for i := range f.ordering {
+		f.ordering[i].Prefix(tableAlias, fields...)
 	}
 	return f
 }

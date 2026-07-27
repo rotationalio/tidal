@@ -431,3 +431,19 @@ func TestFilterComprehensive(t *testing.T) {
 		sql.Named("w34", true),
 	}, f.Params())
 }
+
+func TestFilterPrefix(t *testing.T) {
+	f := New().
+		Where("color", Eq, "red").
+		And("age", Gte, 25).
+		OrderBy("-age", "created").
+		Limit(10).
+		Offset(30).
+		Prefix("t")
+
+	require.Equal(t,
+		"WHERE t.color = :w1 AND t.age >= :w2 ORDER BY t.age DESC, t.created ASC LIMIT 10 OFFSET 30",
+		f.Clause(),
+		"filtering didn't work as expected",
+	)
+}
