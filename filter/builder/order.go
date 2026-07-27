@@ -34,9 +34,16 @@ type OrderBy struct {
 	Direction OrderDirection
 }
 
+var _ Prefixer = (*OrderBy)(nil)
+
 // Returns the column and direction as a string for ANSI SQL.
 func (o OrderBy) String() string {
 	return fmt.Sprintf("%s %s", o.Column, o.Direction)
+}
+
+// Modifies the order by column to include the table alias.
+func (o *OrderBy) Prefix(tableAlias string, fields ...string) {
+	o.Column = Prefix(o.Column, tableAlias, fields...)
 }
 
 //============================================================================

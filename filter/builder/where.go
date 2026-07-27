@@ -204,3 +204,36 @@ func renderNode(node any, params *[]sql.NamedArg, idx *int) string {
 		return ""
 	}
 }
+
+//============================================================================
+// Field Prefixing for Joins
+//============================================================================
+
+var (
+	_ Prefixer = (*Where)(nil)
+	_ Prefixer = (*whereNode)(nil)
+	_ Prefixer = (*whereGroup)(nil)
+	_ Prefixer = (*whereCondition)(nil)
+)
+
+func (w *Where) Prefix(tableAlias string, fields ...string) {
+	if w.root != nil {
+		w.root.Prefix(tableAlias, fields...)
+	}
+}
+
+func (w *whereNode) Prefix(tableAlias string, fields ...string) {
+	if prefixer, ok := w.node.(Prefixer); ok {
+		prefixer.Prefix(tableAlias, fields...)
+	}
+}
+
+func (w *whereGroup) Prefix(tableAlias string, fields ...string) {
+	for _, child := range w.children {
+		child.Prefix(tableAlias, fields...)
+	}
+}
+
+func (c *whereCondition) Prefix(tableAlias string, fields ...string) {
+	c.field = Prefix(c.field, tableAlias, fields...)
+}
