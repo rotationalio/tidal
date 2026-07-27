@@ -20,6 +20,8 @@ type Prefixer interface {
 	Prefix(tableAlias string, fields ...string)
 }
 
+// Adds (or removes) a table alias to the beginning of the field using the dot separator.
+// This function should be used to implement the Prefixer interface.
 func Prefix(field string, tableAlias string, fields ...string) string {
 	unprefixed := field
 	if i := strings.Index(field, "."); i != -1 {

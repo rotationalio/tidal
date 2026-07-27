@@ -23,15 +23,19 @@
 //	users, err := cursor.List()
 package store
 
-import "strings"
+import (
+	"strings"
 
-func FieldList(tableAlias string, fields []string) string {
-	if tableAlias != "" {
-		out := make([]string, len(fields))
-		for i, field := range fields {
-			out[i] = tableAlias + "." + field
-		}
-		return strings.Join(out, ", ")
+	"go.rtnl.ai/tidal/filter/builder"
+)
+
+// Returns a comma-separated list of fields with the table alias prefixed if provided.
+// NOTE: follows Prefix semantics for including/excluding fields and for removing a
+// prefix if necessary.
+func FieldList(tableAlias string, fields []string, include ...string) string {
+	out := make([]string, len(fields))
+	for i, field := range fields {
+		out[i] = builder.Prefix(field, tableAlias, include...)
 	}
-	return strings.Join(fields, ", ")
+	return strings.Join(out, ", ")
 }
