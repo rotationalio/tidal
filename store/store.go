@@ -22,3 +22,16 @@
 //	cursor, err := crud.List(tx, (&filter.Filter{}).OrderBy("name").Limit(10))
 //	users, err := cursor.List()
 package store
+
+import "strings"
+
+func FieldList(tableAlias string, fields []string) string {
+	if tableAlias != "" {
+		out := make([]string, len(fields))
+		for i, field := range fields {
+			out[i] = tableAlias + "." + field
+		}
+		return strings.Join(out, ", ")
+	}
+	return strings.Join(fields, ", ")
+}

@@ -204,18 +204,18 @@ func (c *CRUD[M]) Params(op model.Operation) (fields []string, placeholders []st
 
 // ListQuery builds the SELECT used by [CRUD.List].
 func (c *CRUD[M]) ListQuery(table string) string {
-	return fmt.Sprintf("SELECT %s FROM %s", strings.Join(c.Fields(model.List), ", "), table)
+	return fmt.Sprintf("SELECT %s FROM %s", FieldList("", c.Fields(model.List)), table)
 }
 
 // CreateQuery builds the INSERT used by [CRUD.Create].
 func (c *CRUD[M]) CreateQuery(table string) string {
 	fields, placeholders := c.Params(model.Create)
-	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, strings.Join(fields, ", "), strings.Join(placeholders, ", "))
+	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, FieldList("", fields), strings.Join(placeholders, ", "))
 }
 
 // RetrieveQuery builds the SELECT prefix used by [CRUD.Retrieve] (caller appends the id predicate).
 func (c *CRUD[M]) RetrieveQuery(table string) string {
-	return fmt.Sprintf("SELECT %s FROM %s WHERE ", strings.Join(c.Fields(model.Retrieve), ", "), table)
+	return fmt.Sprintf("SELECT %s FROM %s WHERE ", FieldList("", c.Fields(model.Retrieve)), table)
 }
 
 // UpdateQuery builds the UPDATE used by [CRUD.Update].

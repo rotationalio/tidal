@@ -297,6 +297,22 @@ func (f *Filter) Offset(n int) *Filter {
 }
 
 //============================================================================
+// Filter Prefixing
+//============================================================================
+
+// Prefixes all fields in the filter with a table alias.
+func (f *Filter) Prefix(tableAlias string, fields ...string) *Filter {
+	if f.whereClause != nil {
+		f.whereClause.Prefix(tableAlias, fields...)
+	}
+
+	for _, order := range f.ordering {
+		order.Prefix(tableAlias, fields...)
+	}
+	return f
+}
+
+//============================================================================
 // FilterList Implementation for Filter
 //============================================================================
 
