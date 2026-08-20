@@ -175,15 +175,25 @@ func New[M Model](table string) *CRUD[M] {
 // Errors
 
 var (
-	ErrMissingID              = errors.ErrMissingID
 	ErrNotFound               = errors.ErrNotFound
-	ErrUnsupportedPlaceholder = errors.ErrUnsupportedPlaceholder
+	ErrNotNull                = errors.ErrNotNull
+	ErrReadOnly               = errors.ErrReadOnly
+	ErrAlreadyExists          = errors.ErrAlreadyExists
+	ErrConstraint             = errors.ErrConstraint
+	ErrMissingReference       = errors.ErrMissingReference
+	ErrDeleteRestricted       = errors.ErrDeleteRestricted
 	ErrConnectionOptions      = errors.ErrConnectionOptions
 	ErrConnect                = errors.ErrConnect
 	ErrPing                   = errors.ErrPing
+	ErrUnsupportedPlaceholder = errors.ErrUnsupportedPlaceholder
+	ErrMissingID              = errors.ErrMissingID
+	ErrInvalidIdentifier      = errors.ErrInvalidIdentifier
+	ErrMissingAssociation     = errors.ErrMissingAssociation
+	ErrNoIdentifiers          = errors.ErrNoIdentifiers
 )
 
 type (
 	UnsupportedProvider = errors.UnsupportedProvider
 	MissingArgument     = errors.MissingArgument
+	Error               = errors.Error
 )
