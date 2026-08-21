@@ -63,6 +63,18 @@ const (
 	// IsNotDistinctFrom is the SQL 'IS NOT DISTINCT FROM' operator for null-safe equality.
 	// Not all database providers support it.
 	IsNotDistinctFrom
+
+	// BitAnd is the SQL '&' operator for bitwise AND.
+	BitAnd
+
+	// BitOr is the SQL '|' operator for bitwise OR.
+	BitOr
+
+	// BitXor is the SQL '^' operator for bitwise XOR.
+	BitXor
+
+	// BitNot is the SQL '~' operator for bitwise NOT.
+	BitNot
 )
 
 // Returns the operator as a string for ANSI SQL.
@@ -100,6 +112,14 @@ func (op WhereOp) String() string {
 		return "IS DISTINCT FROM"
 	case IsNotDistinctFrom:
 		return "IS NOT DISTINCT FROM"
+	case BitAnd:
+		return "&"
+	case BitOr:
+		return "|"
+	case BitXor:
+		return "^"
+	case BitNot:
+		return "~"
 	default:
 		return "unknown"
 	}

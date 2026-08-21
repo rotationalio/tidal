@@ -85,6 +85,10 @@ const (
 	IsNot             = builder.IsNot
 	IsDistinctFrom    = builder.IsDistinctFrom
 	IsNotDistinctFrom = builder.IsNotDistinctFrom
+	BitAnd            = builder.BitAnd
+	BitOr             = builder.BitOr
+	BitXor            = builder.BitXor
+	BitNot            = builder.BitNot
 )
 
 //============================================================================
