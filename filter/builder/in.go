@@ -32,13 +32,7 @@ func inValues(value any) []any {
 	}
 }
 
-// Returns true if the condition should be added to the WHERE clause.
-func shouldAddCondition(op WhereOp, value any) bool {
-	// All operators except In are always added.
-	if op != In {
-		return true
-	}
-
-	// An In condition with an empty slice is omitted.
-	return len(inValues(value)) > 0
+// Reports whether a value is a nil or empty slice/array.
+func isEmptySet(value any) bool {
+	return len(inValues(value)) == 0
 }

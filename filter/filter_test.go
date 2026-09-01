@@ -11,6 +11,7 @@ import (
 // ORDER BY Clause Builder
 //============================================================================
 
+// Check ascending and descending order, including replacing an old order.
 func TestFilterOrder(t *testing.T) {
 	t.Run("OrderByAscDesc", func(t *testing.T) {
 		// Bare column is ASC; -prefix is DESC.
@@ -29,13 +30,17 @@ func TestFilterOrder(t *testing.T) {
 // LIMIT / OFFSET Clause Builder
 //============================================================================
 
+// Check limit and offset, including removing them with negative values.
 func TestFilterLimitOffset(t *testing.T) {
 	t.Run("LimitOffset", func(t *testing.T) {
+		// Set an order, limit, and offset, then check the full SQL clause.
 		f := (&Filter{}).OrderBy("id").Limit(10).Offset(5)
 		require.Equal(t, "ORDER BY id ASC LIMIT 10 OFFSET 5", f.Clause())
 	})
 
 	t.Run("LimitOffsetWithoutOrder", func(t *testing.T) {
+		// Set a limit and offset without an order, then check they work on their
+		// own.
 		f := (&Filter{}).Limit(10).Offset(5)
 		require.Equal(t, "LIMIT 10 OFFSET 5", f.Clause())
 	})
@@ -51,17 +56,24 @@ func TestFilterLimitOffset(t *testing.T) {
 // WHERE Clause Builder
 //============================================================================
 
+// Check conditions, groups, operators, subqueries, filter changes, and
+// parameter order.
 func TestFilterWhere(t *testing.T) {
-	t.Run("WhereOverwrite", func(t *testing.T) {
+	t.Run("WhereAppends", func(t *testing.T) {
+		// Add two conditions and check that both remain with parameters in order.
 		f := (&Filter{}).
 			Where("status", Eq, "active").
 			Where("role", Eq, "admin")
 
-		require.Equal(t, "WHERE role = :w1", f.Clause())
-		require.Equal(t, []sql.NamedArg{sql.Named("w1", "admin")}, f.Params())
+		require.Equal(t, "WHERE status = :w1 AND role = :w2", f.Clause())
+		require.Equal(t, []sql.NamedArg{
+			sql.Named("w1", "active"),
+			sql.Named("w2", "admin"),
+		}, f.Params())
 	})
 
 	t.Run("WhereAndOrAppend", func(t *testing.T) {
+		// Add AND and OR conditions and check their order and parameters.
 		f := (&Filter{}).
 			Where("status", Eq, "active").
 			And("age", Gte, 18).
@@ -76,6 +88,8 @@ func TestFilterWhere(t *testing.T) {
 	})
 
 	t.Run("AndGroup", func(t *testing.T) {
+		// Add an AND group with AND and OR terms, then check its parentheses and
+		// parameter order.
 		f := (&Filter{}).
 			Where("status", Eq, "active").
 			AndGroup(func(g *WhereGroup) {
@@ -91,6 +105,7 @@ func TestFilterWhere(t *testing.T) {
 	})
 
 	t.Run("OrGroup", func(t *testing.T) {
+		// Add an OR group and check that it has its own parentheses.
 		f := (&Filter{}).
 			Where("status", Eq, "active").
 			OrGroup(func(g *WhereGroup) {
@@ -101,6 +116,7 @@ func TestFilterWhere(t *testing.T) {
 	})
 
 	t.Run("WhereWithOrderLimitOffset", func(t *testing.T) {
+		// Set a condition, order, limit, and offset, then check their SQL order.
 		f := (&Filter{}).
 			Where("status", Eq, "active").
 			OrderBy("-created").
@@ -111,6 +127,7 @@ func TestFilterWhere(t *testing.T) {
 	})
 
 	t.Run("LikeOperator", func(t *testing.T) {
+		// Add two LIKE conditions and check that both patterns are parameters.
 		f := (&Filter{}).
 			Where("name", Like, "%ada%").
 			And("email", Like, "%@example.com")
@@ -119,6 +136,8 @@ func TestFilterWhere(t *testing.T) {
 	})
 
 	t.Run("ILikeOperator", func(t *testing.T) {
+		// Add a case-insensitive LIKE condition and check its operator and
+		// pattern parameter.
 		f := (&Filter{}).Where("name", ILike, "%ada%")
 
 		require.Equal(t, "WHERE name ILIKE :w1", f.Clause())
@@ -126,6 +145,8 @@ func TestFilterWhere(t *testing.T) {
 	})
 
 	t.Run("InOperator", func(t *testing.T) {
+		// Add one normal condition and an IN list, then check all values get
+		// placeholders in order.
 		f := (&Filter{}).
 			Where("status", Eq, "active").
 			And("id", In, []int64{1, 2, 3})
@@ -139,23 +160,97 @@ func TestFilterWhere(t *testing.T) {
 		}, f.Params())
 	})
 
-	t.Run("InEmptySliceOmitted", func(t *testing.T) {
+	t.Run("InEmptySliceFalse", func(t *testing.T) {
+		// Add an empty IN list and check it becomes false instead of removing
+		// the filter.
 		f := (&Filter{}).
 			Where("status", Eq, "active").
 			And("id", In, []string{})
 
-		require.Equal(t, "WHERE status = :w1", f.Clause())
+		require.Equal(t, "WHERE status = :w1 AND 1=0", f.Clause())
 		require.Equal(t, []sql.NamedArg{sql.Named("w1", "active")}, f.Params())
 	})
 
-	t.Run("InEmptySliceOnly", func(t *testing.T) {
-		f := (&Filter{}).Where("id", In, []int{})
+	t.Run("NotInAnyAndAll", func(t *testing.T) {
+		// Add a NOT IN list and ANY/ALL conditions, then check the SQL and
+		// parameters for each one.
+		f := (&Filter{}).
+			Where("id", NotIn, []int64{1, 2}).
+			And("status", Any(Eq), Subselect("SELECT status FROM archived_statuses")).
+			And("priority", All(Gt), []int64{1, 2})
 
-		require.Empty(t, f.Clause())
-		require.Empty(t, f.Params())
+		require.Equal(t, "WHERE id NOT IN (:w1, :w2) AND status = ANY (SELECT status FROM archived_statuses) AND priority > ALL (:w3)", f.Clause())
+		require.Equal(t, []sql.NamedArg{
+			sql.Named("w1", int64(1)),
+			sql.Named("w2", int64(2)),
+			sql.Named("w3", []int64{1, 2}),
+		}, f.Params())
+	})
+
+	t.Run("SubselectParameters", func(t *testing.T) {
+		// Use a SELECT string with a named parameter and check that the SELECT
+		// stays as SQL while its value is bound separately.
+		f := (&Filter{}).
+			Where("experiment_id", NotIn, "SELECT experiment_id FROM task_versions WHERE task_id=:task_id").
+			Param("task_id", 42)
+
+		require.Equal(t, "WHERE experiment_id NOT IN (SELECT experiment_id FROM task_versions WHERE task_id=:task_id)", f.Clause())
+		require.Equal(t, []sql.NamedArg{sql.Named("task_id", 42)}, f.Params())
+	})
+
+	t.Run("CloneAndClearWhere", func(t *testing.T) {
+		// Make and clone a filter, change the clone, and check that the original
+		// is unchanged and the clone keeps its order and limit after clearing
+		// WHERE.
+		base := (&Filter{}).
+			Where("tenant_id", Eq, 7).
+			OrderBy("-created").
+			Limit(10)
+		clone := base.Clone().
+			Where("status", Eq, "active").
+			Prefix("t")
+
+		require.Equal(t, "WHERE tenant_id = :w1 ORDER BY created DESC LIMIT 10", base.Clause())
+		require.Equal(t, "WHERE t.tenant_id = :w1 AND t.status = :w2 ORDER BY t.created DESC LIMIT 10", clone.Clause())
+
+		clone.ClearWhere()
+		require.Equal(t, "ORDER BY t.created DESC LIMIT 10", clone.Clause())
+	})
+
+	t.Run("CloneDeepCopiesGroupsAndParameters", func(t *testing.T) {
+		// Make and cache a filter with a nested group and named parameter, then
+		// change the clone. The original must keep its fields and value.
+		base := (&Filter{}).
+			Where("tenant_id", Eq, 7).
+			AndGroup(func(g *WhereGroup) {
+				g.Where("status", Eq, "active").Or("status", Eq, "pending")
+			}).
+			Where("id", In, Subselect("SELECT id FROM memberships WHERE owner=:owner")).
+			Param("owner", "ada")
+		_ = base.Clause()
+		_ = base.Params()
+
+		clone := base.Clone().Prefix("t").Param("owner", "grace")
+
+		require.Equal(t, "WHERE tenant_id = :w1 AND (status = :w2 OR status = :w3) AND id IN (SELECT id FROM memberships WHERE owner=:owner)", base.Clause())
+		require.Equal(t, []sql.NamedArg{
+			sql.Named("w1", 7),
+			sql.Named("w2", "active"),
+			sql.Named("w3", "pending"),
+			sql.Named("owner", "ada"),
+		}, base.Params())
+		require.Equal(t, "WHERE t.tenant_id = :w1 AND (t.status = :w2 OR t.status = :w3) AND t.id IN (SELECT id FROM memberships WHERE owner=:owner)", clone.Clause())
+		require.Equal(t, []sql.NamedArg{
+			sql.Named("w1", 7),
+			sql.Named("w2", "active"),
+			sql.Named("w3", "pending"),
+			sql.Named("owner", "grace"),
+		}, clone.Params())
 	})
 
 	t.Run("IsIsNotLiterals", func(t *testing.T) {
+		// Use SQL literals and check that they appear directly without
+		// parameters.
 		f := (&Filter{}).
 			Where("revoked", Is, Null).
 			And("deleted_at", IsNot, Null).
@@ -168,6 +263,8 @@ func TestFilterWhere(t *testing.T) {
 	})
 
 	t.Run("IsWithValue", func(t *testing.T) {
+		// Use normal values with IS and IS NOT and check that they use
+		// parameters.
 		f := (&Filter{}).
 			Where("status", Is, "active").
 			And("legacy", IsNot, true)
@@ -180,6 +277,8 @@ func TestFilterWhere(t *testing.T) {
 	})
 
 	t.Run("IsDistinctFromOperators", func(t *testing.T) {
+		// Use both distinctness operators and check that their values are
+		// bound in order, including nil.
 		f := (&Filter{}).
 			Where("a", IsDistinctFrom, nil).
 			And("b", IsNotDistinctFrom, "active")
@@ -191,37 +290,30 @@ func TestFilterWhere(t *testing.T) {
 		}, f.Params())
 	})
 
-	t.Run("DeprecatedNullOperators", func(t *testing.T) {
-		f := (&Filter{}).
-			Where("revoked", IsNull, nil).
-			And("deleted_at", IsNotNull, nil)
-
-		require.Equal(t, "WHERE revoked IS NULL AND deleted_at IS NOT NULL", f.Clause())
-		require.Empty(t, f.Params())
-	})
 }
 
 //============================================================================
 // WHERE Misuse / Edge Cases
 //============================================================================
 
-// Documents current behavior when WHERE helpers are called out of the usual order.
-// [Filter] does not return errors today; these tests lock in what happens instead.
+// Check what happens when WHERE methods are called in unusual orders.
+// Filter does not return errors, so these cases define the current behavior.
 func TestFilterWhereMisuse(t *testing.T) {
 	t.Run("OrBeforeWhereStartsFirstCondition", func(t *testing.T) {
-		// Or on an empty filter acts like the first condition; no OR keyword is emitted.
+		// OR on an empty filter becomes the first condition without an OR keyword.
 		f := (&Filter{}).Or("role", Eq, "admin")
 		require.Equal(t, "WHERE role = :w1", f.Clause())
 	})
 
 	t.Run("AndBeforeWhereStartsFirstCondition", func(t *testing.T) {
-		// And on an empty filter acts like the first condition; no AND keyword is emitted.
+		// AND on an empty filter becomes the first condition without an AND keyword.
 		f := (&Filter{}).And("age", Gte, 18)
 		require.Equal(t, "WHERE age >= :w1", f.Clause())
 	})
 
 	t.Run("OrGroupBeforeWhereBecomesRootGroup", func(t *testing.T) {
-		// An empty root accepts the group directly; no leading OR is emitted.
+		// An OR group on an empty filter becomes the first group without an OR
+		// keyword.
 		f := (&Filter{}).OrGroup(func(g *WhereGroup) {
 			g.Where("role", Eq, "admin")
 		})
@@ -229,33 +321,36 @@ func TestFilterWhereMisuse(t *testing.T) {
 	})
 
 	t.Run("AndGroupBeforeWhereBecomesRootGroup", func(t *testing.T) {
-		// An empty root accepts the group directly; no leading AND is emitted.
+		// An AND group on an empty filter becomes the first group without an AND
+		// keyword.
 		f := (&Filter{}).AndGroup(func(g *WhereGroup) {
 			g.Where("role", Eq, "admin")
 		})
 		require.Equal(t, "WHERE (role = :w1)", f.Clause())
 	})
 
-	t.Run("OrThenWhereReplacesPriorCondition", func(t *testing.T) {
-		// Where replaces the entire clause
+	t.Run("OrThenWhereAppends", func(t *testing.T) {
+		// WHERE still adds an AND condition after OR; it does not replace the
+		// existing condition.
 		f := (&Filter{}).
 			Or("legacy", Eq, true).
 			Where("status", Eq, "active")
-		require.Equal(t, "WHERE status = :w1", f.Clause())
+		require.Equal(t, "WHERE legacy = :w1 AND status = :w2", f.Clause())
 	})
 
-	t.Run("OrGroupThenWhereReplacesEntireClause", func(t *testing.T) {
-		// Where replaces the entire clause
+	t.Run("OrGroupThenWhereAppends", func(t *testing.T) {
+		// WHERE adds an AND condition after an OR group; replacing it requires
+		// an explicit call to ReplaceWhere.
 		f := (&Filter{}).
 			OrGroup(func(g *WhereGroup) {
 				g.Where("role", Eq, "admin")
 			}).
 			Where("status", Eq, "active")
-		require.Equal(t, "WHERE status = :w1", f.Clause())
+		require.Equal(t, "WHERE (role = :w1 AND status = :w2)", f.Clause())
 	})
 
 	t.Run("EmptyOrGroupThenWhere", func(t *testing.T) {
-		// Where replaces the entire clause
+		// An empty group is ignored, so WHERE becomes the first condition.
 		f := (&Filter{}).
 			OrGroup(func(g *WhereGroup) {}).
 			Where("status", Eq, "active")
@@ -263,14 +358,14 @@ func TestFilterWhereMisuse(t *testing.T) {
 	})
 
 	t.Run("EmptyOrGroupOnly", func(t *testing.T) {
-		// An empty group is ignored; no OR keyword is emitted.
+		// An empty group is ignored and produces no SQL.
 		f := (&Filter{}).OrGroup(func(g *WhereGroup) {})
 		require.Empty(t, f.Clause())
 		require.Empty(t, f.Params())
 	})
 
 	t.Run("OrOrWithoutWhere", func(t *testing.T) {
-		// First Or starts the expression; the second Or appends normally.
+		// The first OR starts the filter; the second OR adds another condition.
 		f := (&Filter{}).
 			Or("a", Eq, 1).
 			Or("b", Eq, 2)
@@ -278,22 +373,68 @@ func TestFilterWhereMisuse(t *testing.T) {
 	})
 
 	t.Run("OrGroupOrBeforeWhereInGroup", func(t *testing.T) {
-		// Inside a group, Or starts the sub-expression; Where replaces it.
+		// Inside a group, OR starts the group and WHERE adds an AND condition,
+		// just as it does on Filter.
 		f := (&Filter{}).OrGroup(func(g *WhereGroup) {
 			g.Or("role", Eq, "admin").Where("status", Eq, "active")
 		})
-		require.Equal(t, "WHERE (status = :w1)", f.Clause())
+		require.Equal(t, "WHERE (role = :w1 AND status = :w2)", f.Clause())
 	})
 
-	t.Run("OrOrGroupThenWhereReplacesAll", func(t *testing.T) {
-		// Where replaces the entire clause
+	t.Run("OrOrGroupThenWhereAppends", func(t *testing.T) {
+		// WHERE adds an AND condition after existing OR terms; use ReplaceWhere
+		// when the old filter should be discarded.
 		f := (&Filter{}).
 			Or("legacy", Eq, true).
 			OrGroup(func(g *WhereGroup) {
 				g.Where("role", Eq, "admin")
 			}).
 			Where("status", Eq, "active")
-		require.Equal(t, "WHERE status = :w1", f.Clause())
+		require.Equal(t, "WHERE legacy = :w1 OR (role = :w2) AND status = :w3", f.Clause())
+	})
+
+	t.Run("ReplaceWhere", func(t *testing.T) {
+		// Cache a filter with a subquery parameter and pagination, replace WHERE,
+		// and check that pagination remains while the old condition and parameter
+		// are removed.
+		f := (&Filter{}).
+			Where("legacy_id", NotIn, Subselect("SELECT id FROM legacy WHERE owner=:old_owner")).
+			Param("old_owner", "ada").
+			OrderBy("-created").
+			Limit(20).
+			Offset(5)
+		_ = f.Clause()
+		_ = f.Params()
+
+		f.ReplaceWhere("status", Eq, "active")
+
+		require.Equal(t, "WHERE status = :w1 ORDER BY created DESC LIMIT 20 OFFSET 5", f.Clause())
+		require.Equal(t, []sql.NamedArg{sql.Named("w1", "active")}, f.Params())
+	})
+
+	t.Run("ClearWhereAndClear", func(t *testing.T) {
+		// Cache a filter with every clause, clear WHERE, and check that order,
+		// limit, and offset remain while WHERE parameters are removed.
+		f := (&Filter{}).
+			Where("id", In, Subselect("SELECT id FROM records WHERE owner=:owner")).
+			Param("owner", "ada").
+			OrderBy("id").
+			Limit(10).
+			Offset(5)
+		_ = f.Clause()
+		_ = f.Params()
+
+		f.ClearWhere()
+		require.Equal(t, "ORDER BY id ASC LIMIT 10 OFFSET 5", f.Clause())
+		require.Empty(t, f.Params())
+
+		// Clear changes the filter itself, so callers do not need to assign its
+		// return value.
+		cleared := f.Where("status", Eq, "active").Clear()
+		require.Same(t, f, cleared)
+		require.Equal(t, &Filter{}, f)
+		require.Empty(t, f.Clause())
+		require.Empty(t, f.Params())
 	})
 }
 
@@ -301,8 +442,7 @@ func TestFilterWhereMisuse(t *testing.T) {
 // Comprehensive Clause Builder
 //============================================================================
 
-// Comprehensive test of all WHERE, ORDER BY, LIMIT, and OFFSET building
-// methods with a really, really, REALLY complex filter.
+// Check a filter that combines WHERE, ORDER BY, LIMIT, and OFFSET.
 func TestFilterComprehensive(t *testing.T) {
 	f := (&Filter{}).
 		Where("status", Eq, "active").
@@ -432,15 +572,23 @@ func TestFilterComprehensive(t *testing.T) {
 	}, f.Params())
 }
 
+// Verify prefixing updates both WHERE fields and ORDER BY columns after the
+// filter has already rendered and cached its output.
 func TestFilterPrefix(t *testing.T) {
+	// Build and render a filter first so this test also exercises cache
+	// invalidation when prefixing is applied afterward.
 	f := New().
 		Where("color", Eq, "red").
 		And("age", Gte, 25).
 		OrderBy("-age", "created").
 		Limit(10).
-		Offset(30).
-		Prefix("t")
+		Offset(30)
+	_ = f.Clause()
+	_ = f.Params()
+	f.Prefix("t")
 
+	// Assert that both WHERE fields and ORDER BY columns receive the prefix,
+	// while pagination and parameter numbering remain unchanged.
 	require.Equal(t,
 		"WHERE t.color = :w1 AND t.age >= :w2 ORDER BY t.age DESC, t.created ASC LIMIT 10 OFFSET 30",
 		f.Clause(),

@@ -3,11 +3,18 @@
 // Use [Filter] for WHERE, ORDER BY, LIMIT, and OFFSET. Use [CustomFilter] when you
 // need hand-written SQL (for example GROUP BY).
 //
+// Use [Subselect] with [In], [NotIn], [Any], or [All] when a trusted SQL subquery is
+// needed. Provider-specific SQL is passed through for the database to validate.
+// [Filter.Where] and [WhereGroup.Where] append with AND rather than silently
+// replacing the WHERE filter; use [Filter.ReplaceWhere] to replace the WHERE
+// expression and [Filter.ClearWhere] to clear it. [Filter.Clear] clears every
+// filter clause.
+//
 // Building a composable [Filter] (can use tidal aliases):
 //
 //	f := (&tidal.Filter{}).
 //		Where("status", tidal.Eq, "active").
-//		AndGroup(func(g *tidal.Where) {
+//		AndGroup(func(g *tidal.WhereGroup) {
 //			g.Where("role", tidal.Eq, "admin").
 //				Or("role", tidal.Eq, "editor").
 //				Or("role", tidal.Eq, "viewer")
@@ -30,6 +37,7 @@ package filter
 
 import (
 	"database/sql"
+	"slices"
 	"strings"
 
 	"go.rtnl.ai/tidal/filter/builder"
@@ -50,7 +58,10 @@ type ListFilter interface {
 	Params() []sql.NamedArg
 }
 
-// WhereGroup builds a grouped WHERE expression inside [Filter.AndGroup] and [Filter.OrGroup].
+// WhereGroup builds a grouped WHERE expression inside [Filter.AndGroup] and
+// [Filter.OrGroup]. Its Where method appends with AND, just like
+// [Filter.Where]. Use [Set] to replace the group's expression and [Reset] to clear
+// it.
 type WhereGroup = builder.Where
 
 // WhereOp is a comparison operator in a WHERE condition.
@@ -59,6 +70,9 @@ type WhereOp = builder.WhereOp
 // Literal is a SQL keyword used as the right-hand side of [Is] and [IsNot]
 // predicates.
 type Literal = builder.Literal
+
+// Subquery is trusted SQL rendered inside IN, NOT IN, ANY, or ALL expressions.
+type Subquery = builder.Subquery
 
 // SQL literals for [Is] and [IsNot] predicates.
 const (
@@ -78,9 +92,8 @@ const (
 	Lte               = builder.Lte
 	Like              = builder.Like
 	ILike             = builder.ILike
-	IsNull            = builder.IsNull    // Deprecated: use [Is] with [Null] instead.
-	IsNotNull         = builder.IsNotNull // Deprecated: use [IsNot] with [Null] instead.
 	In                = builder.In
+	NotIn             = builder.NotIn
 	Is                = builder.Is
 	IsNot             = builder.IsNot
 	IsDistinctFrom    = builder.IsDistinctFrom
@@ -90,6 +103,24 @@ const (
 	BitXor            = builder.BitXor
 	BitNot            = builder.BitNot
 )
+
+// Builds an ANY comparison from a comparison operator. Unsupported operators
+// are rendered as provided and may fail when the database executes the query.
+func Any(op WhereOp) WhereOp {
+	// TODO: add doc comment from filter.Any(op) above anytime it is
+	// updated; Go will pass through docs for type aliases but not for
+	// function redirects
+	return builder.Any(op)
+}
+
+// Builds an ALL comparison from a comparison operator. Unsupported operators
+// are rendered as provided and may fail when the database executes the query.
+func All(op WhereOp) WhereOp {
+	// TODO: add doc comment from filter.All(op) above anytime it is
+	// updated; Go will pass through docs for type aliases but not for
+	// function redirects
+	return builder.All(op)
+}
 
 //============================================================================
 // Filter Implementation
@@ -128,6 +159,14 @@ func New() *Filter {
 	return &Filter{}
 }
 
+// Builds a trusted SQL subquery for use with [In], [NotIn], [Any], or [All].
+func Subselect(query string) Subquery {
+	// TODO: add doc comment from filter.Subselect(query) above anytime it is
+	// updated; Go will pass through docs for type aliases but not for
+	// function redirects
+	return builder.Subselect(query)
+}
+
 // Create a new filter with a WHERE clause.
 func Where(field string, op WhereOp, value any) *Filter {
 	return New().Where(field, op, value)
@@ -152,10 +191,72 @@ func Offset(n int) *Filter {
 // Where Building Methods
 //============================================================================
 
-// Calling Where replaces any previously built WHERE clause and starts a new one.
+// Appends a condition joined with AND. For In, NotIn, Any, and All, a [Subquery]
+// value or a string beginning with SELECT or WITH is rendered as trusted SQL.
+// Use [Filter.ReplaceWhere] to intentionally discard the existing WHERE
+// expression.
 func (f *Filter) Where(field string, op WhereOp, value any) *Filter {
-	f.ensureWhere().Set(field, op, value)
+	f.ensureWhere().And(field, op, value)
 	return f
+}
+
+// Replaces the existing WHERE expression with a single condition.
+func (f *Filter) ReplaceWhere(field string, op WhereOp, value any) *Filter {
+	f.resetCache()
+	if f.whereClause == nil {
+		f.whereClause = &builder.Where{}
+	} else {
+		f.whereClause.Reset()
+	}
+	f.whereClause.Set(field, op, value)
+	return f
+}
+
+// Adds or replaces a named parameter available to SQL expressions in the WHERE
+// clause.
+func (f *Filter) Param(name string, value any) *Filter {
+	f.ensureWhere().Param(name, value)
+	return f
+}
+
+// Clears the WHERE expression and its parameters while retaining other clauses.
+func (f *Filter) ClearWhere() *Filter {
+	f.resetCache()
+	if f.whereClause != nil {
+		f.whereClause.Reset()
+	}
+	return f
+}
+
+// Clears the Filter completely.
+func (f *Filter) Clear() *Filter {
+	f.resetCache()
+	f.whereClause = nil
+	f.ordering = nil
+	f.limit = nil
+	f.offset = nil
+	return f
+}
+
+// Copies the filter so subsequent mutations do not affect the original.
+func (f *Filter) Clone() *Filter {
+	if f == nil {
+		return nil
+	}
+
+	clone := &Filter{
+		whereClause: f.whereClause.Clone(),
+		ordering:    slices.Clone(f.ordering),
+	}
+	if f.limit != nil {
+		limit := *f.limit
+		clone.limit = &limit
+	}
+	if f.offset != nil {
+		offset := *f.offset
+		clone.offset = &offset
+	}
+	return clone
 }
 
 // And appends a condition joined with AND.
@@ -306,6 +407,7 @@ func (f *Filter) Offset(n int) *Filter {
 
 // Prefixes all fields in the filter with a table alias.
 func (f *Filter) Prefix(tableAlias string, fields ...string) *Filter {
+	f.resetCache()
 	if f.whereClause != nil {
 		f.whereClause.Prefix(tableAlias, fields...)
 	}
