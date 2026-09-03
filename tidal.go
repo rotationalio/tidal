@@ -65,7 +65,10 @@ type (
 )
 
 var (
+	// Open opens a database connection for the provided DSN.
 	Open = conn.Open
+
+	// Wrap wraps an existing database connection.
 	Wrap = conn.Wrap
 )
 
@@ -113,21 +116,33 @@ type (
 	CustomFilter = filter.CustomFilter
 	ListFilter   = filter.ListFilter
 	WhereGroup   = filter.WhereGroup
+	WhereOp      = filter.WhereOp
+	Subquery     = filter.Subquery
 )
 
 var (
-	// Filter constructors
-
+	// NewFilter creates an empty filter.
 	NewFilter = filter.New
-	Where     = filter.Where
-	OrderBy   = filter.OrderBy
-	Limit     = filter.Limit
-	Offset    = filter.Offset
+
+	// Where creates a filter with an initial WHERE condition.
+	Where = filter.Where
+
+	// Subselect builds a trusted SQL subquery for use with In, NotIn, Any, or All.
+	Subselect = filter.Subselect
+
+	// OrderBy creates a filter with an ORDER BY clause.
+	OrderBy = filter.OrderBy
+
+	// Limit creates a filter with a LIMIT clause.
+	Limit = filter.Limit
+
+	// Offset creates a filter with an OFFSET clause.
+	Offset = filter.Offset
 )
 
-const (
-	// Where Operations
+// Where Operations
 
+const (
 	Eq                = builder.Eq
 	Ne                = builder.Ne
 	Gt                = builder.Gt
@@ -136,9 +151,8 @@ const (
 	Lte               = builder.Lte
 	Like              = builder.Like
 	ILike             = builder.ILike
-	IsNull            = builder.IsNull    // Deprecated: use [Is] with [Null] instead.
-	IsNotNull         = builder.IsNotNull // Deprecated: use [IsNot] with [Null] instead.
 	In                = builder.In
+	NotIn             = builder.NotIn
 	Is                = builder.Is
 	IsNot             = builder.IsNot
 	IsDistinctFrom    = builder.IsDistinctFrom
@@ -155,6 +169,18 @@ const (
 
 	OrderASC  = builder.OrderASC
 	OrderDESC = builder.OrderDESC
+)
+
+var (
+	// Any builds an ANY comparison from a comparison operator. Unsupported
+	// operators are rendered as provided and may fail when the database executes
+	// the query.
+	Any = filter.Any
+
+	// All builds an ALL comparison from a comparison operator. Unsupported
+	// operators are rendered as provided and may fail when the database executes
+	// the query.
+	All = filter.All
 )
 
 // Store

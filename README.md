@@ -12,18 +12,18 @@ Import [`go.rtnl.ai/tidal`](https://pkg.go.dev/go.rtnl.ai/tidal) in application 
 
 ## Packages
 
-| Import | Purpose |
-| --- | --- |
-| [`go.rtnl.ai/tidal`](https://pkg.go.dev/go.rtnl.ai/tidal) | Main entry point — re-exports connections, models, filters, and CRUD |
-| [`go.rtnl.ai/tidal/conn`](https://pkg.go.dev/go.rtnl.ai/tidal/conn) | `DB`, `Tx`, `Open`, `Wrap`, [`Beginner`](https://pkg.go.dev/go.rtnl.ai/tidal/conn#Beginner) |
-| [`go.rtnl.ai/tidal/model`](https://pkg.go.dev/go.rtnl.ai/tidal/model) | `Model`, `BaseModel`, `Operation` |
-| [`go.rtnl.ai/tidal/filter`](https://pkg.go.dev/go.rtnl.ai/tidal/filter) | `Filter`, `CustomFilter`, list-query pagination |
-| [`go.rtnl.ai/tidal/store`](https://pkg.go.dev/go.rtnl.ai/tidal/store) | `CRUD`, `Cursor`, query generation |
-| [`go.rtnl.ai/tidal/bind`](https://pkg.go.dev/go.rtnl.ai/tidal/bind) | `:name` placeholder rewriting |
-| [`go.rtnl.ai/tidal/migrations`](https://pkg.go.dev/go.rtnl.ai/tidal/migrations) | Versioned SQL schema migrations |
-| [`go.rtnl.ai/tidal/fields`](https://pkg.go.dev/go.rtnl.ai/tidal/fields) | JSON, string-array, and normalized timestamp column types for `Model` structs |
-| [`go.rtnl.ai/tidal/suite`](https://pkg.go.dev/go.rtnl.ai/tidal/suite) | Database test harness, `ConformsCRUD`, shared `testdata`, and integration tests |
-| [`go.rtnl.ai/tidal/suite/fixtures`](https://pkg.go.dev/go.rtnl.ai/tidal/suite/fixtures) | SQL fixture loader for test suites (`fixtures.File`) |
+| Import                                                                                  | Purpose                                                                                     |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [`go.rtnl.ai/tidal`](https://pkg.go.dev/go.rtnl.ai/tidal)                               | Main entry point — re-exports connections, models, filters, and CRUD                        |
+| [`go.rtnl.ai/tidal/conn`](https://pkg.go.dev/go.rtnl.ai/tidal/conn)                     | `DB`, `Tx`, `Open`, `Wrap`, [`Beginner`](https://pkg.go.dev/go.rtnl.ai/tidal/conn#Beginner) |
+| [`go.rtnl.ai/tidal/model`](https://pkg.go.dev/go.rtnl.ai/tidal/model)                   | `Model`, `BaseModel`, `Operation`                                                           |
+| [`go.rtnl.ai/tidal/filter`](https://pkg.go.dev/go.rtnl.ai/tidal/filter)                 | `Filter`, `CustomFilter`, list-query pagination                                             |
+| [`go.rtnl.ai/tidal/store`](https://pkg.go.dev/go.rtnl.ai/tidal/store)                   | `CRUD`, `Cursor`, query generation                                                          |
+| [`go.rtnl.ai/tidal/bind`](https://pkg.go.dev/go.rtnl.ai/tidal/bind)                     | `:name` placeholder rewriting                                                               |
+| [`go.rtnl.ai/tidal/migrations`](https://pkg.go.dev/go.rtnl.ai/tidal/migrations)         | Versioned SQL schema migrations                                                             |
+| [`go.rtnl.ai/tidal/fields`](https://pkg.go.dev/go.rtnl.ai/tidal/fields)                 | JSON, string-array, and normalized timestamp column types for `Model` structs               |
+| [`go.rtnl.ai/tidal/suite`](https://pkg.go.dev/go.rtnl.ai/tidal/suite)                   | Database test harness, `ConformsCRUD`, shared `testdata`, and integration tests             |
+| [`go.rtnl.ai/tidal/suite/fixtures`](https://pkg.go.dev/go.rtnl.ai/tidal/suite/fixtures) | SQL fixture loader for test suites (`fixtures.File`)                                        |
 
 ## Connecting
 
@@ -95,19 +95,19 @@ Connection URLs are parsed by [`go.rtnl.ai/x/dsn`](https://pkg.go.dev/go.rtnl.ai
 
 ### Shared
 
-| Option | Description |
-| --- | --- |
+| Option     | Description                                                                                                                        |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `readonly` | When `true`, [`DB.BeginTx`](https://pkg.go.dev/go.rtnl.ai/tidal#DB.BeginTx) defaults to read-only transactions and rejects writes. |
 
 ### Postgres
 
 Tidal opens Postgres through [pgx](https://github.com/jackc/pgx) (`database/sql` stdlib driver).
 
-| Option | Description |
-| --- | --- |
-| `max_idle_conns` | `database/sql` pool setting (default `8`). Removed from the URL before connecting. |
-| `max_open_conns` | `database/sql` pool setting (default `16`). Removed from the URL before connecting. |
-| `conn_max_lifetime` | `database/sql` pool setting (default `1h`). Removed from the URL before connecting. |
+| Option               | Description                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| `max_idle_conns`     | `database/sql` pool setting (default `8`). Removed from the URL before connecting.   |
+| `max_open_conns`     | `database/sql` pool setting (default `16`). Removed from the URL before connecting.  |
+| `conn_max_lifetime`  | `database/sql` pool setting (default `1h`). Removed from the URL before connecting.  |
 | `conn_max_idle_time` | `database/sql` pool setting (default `30m`). Removed from the URL before connecting. |
 
 All other query parameters are forwarded to Postgres as normal connection options — see [dsn](https://pkg.go.dev/go.rtnl.ai/x/dsn).
@@ -116,8 +116,8 @@ On connect, tidal registers a pgx `timestamptz` codec so values scanned into `ti
 
 ### SQLite3
 
-| Option | Description |
-| --- | --- |
+| Option     | Description                                                                |
+| ---------- | -------------------------------------------------------------------------- |
 | `readonly` | Same as above. SQLite read-only mode is enforced at the transaction level. |
 
 The database file path comes from the DSN path (`sqlite3:///path/to/db.sqlite`). Tidal does not set SQLite pragmas on `Open`; run `PRAGMA foreign_keys = on` or `PRAGMA query_only = on` after connect in application code when you need them.
@@ -146,23 +146,44 @@ cursor, err := crud.List(tx, tidal.OrderBy("name").Limit(10))
 users, err := cursor.List()
 ```
 
-[`Filter`](https://pkg.go.dev/go.rtnl.ai/tidal#Filter) builds ANSI SQL `WHERE`, `ORDER BY`, `LIMIT`, and `OFFSET` clauses. Calling `Where` replaces any previous WHERE clause (like `OrderBy`, `Limit`, and `Offset`). `And`, `Or`, `AndGroup`, and `OrGroup` append to the current WHERE clause.
+[`Filter`](https://pkg.go.dev/go.rtnl.ai/tidal#Filter) builds ANSI SQL `WHERE`, `ORDER BY`, `LIMIT`, and `OFFSET` clauses. Calling `Where` appends an `AND` condition to the current WHERE clause, like `And`. Use `ReplaceWhere` to intentionally discard the current WHERE expression; `ClearWhere` removes the WHERE expression and its parameters while retaining the other clauses. `Clear` clears the filter completely. `Clone` copies a filter before further mutation.
 
 Start a filter with a constructor instead of the `&tidal.Filter{}` literal. Each constructor returns a `*Filter` you can keep chaining from:
 
-| Constructor | Creates a filter with |
-| --- | --- |
-| [`tidal.NewFilter()`](https://pkg.go.dev/go.rtnl.ai/tidal#NewFilter) | no clauses (empty filter) |
+| Constructor                                                                  | Creates a filter with        |
+| ---------------------------------------------------------------------------- | ---------------------------- |
+| [`tidal.NewFilter()`](https://pkg.go.dev/go.rtnl.ai/tidal#NewFilter)         | no clauses (empty filter)    |
 | [`tidal.Where(field, op, value)`](https://pkg.go.dev/go.rtnl.ai/tidal#Where) | an initial `WHERE` condition |
-| [`tidal.OrderBy(columns...)`](https://pkg.go.dev/go.rtnl.ai/tidal#OrderBy) | an `ORDER BY` clause |
-| [`tidal.Limit(n)`](https://pkg.go.dev/go.rtnl.ai/tidal#Limit) | a `LIMIT` clause |
-| [`tidal.Offset(n)`](https://pkg.go.dev/go.rtnl.ai/tidal#Offset) | an `OFFSET` clause |
+| [`tidal.OrderBy(columns...)`](https://pkg.go.dev/go.rtnl.ai/tidal#OrderBy)   | an `ORDER BY` clause         |
+| [`tidal.Limit(n)`](https://pkg.go.dev/go.rtnl.ai/tidal#Limit)                | a `LIMIT` clause             |
+| [`tidal.Offset(n)`](https://pkg.go.dev/go.rtnl.ai/tidal#Offset)              | an `OFFSET` clause           |
 
-These re-export [`filter.New`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#New), [`filter.Where`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Where), [`filter.OrderBy`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#OrderBy), [`filter.Limit`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Limit), and [`filter.Offset`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Offset) (root uses `NewFilter` because `tidal.New` builds a CRUD store). Import `go.rtnl.ai/tidal/filter` to call them under the `filter.` prefix instead.
+These re-export [`filter.New`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#New), [`filter.Where`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Where), [`filter.Subselect`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Subselect), [`filter.OrderBy`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#OrderBy), [`filter.Limit`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Limit), and [`filter.Offset`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Offset) (root uses `NewFilter` because `tidal.New` builds a CRUD store). Import `go.rtnl.ai/tidal/filter` to call them under the `filter.` prefix instead.
 
-WHERE operators: `Eq`, `Ne`, `Gt`, `Lt`, `Gte`, `Lte`, `Like`, `ILike`, `In`, `Is`, `IsNot`, `IsDistinctFrom`, and `IsNotDistinctFrom`. An `In` condition with an empty slice is omitted. `ILike`, `Is`, `IsNot`, `IsDistinctFrom`, and `IsNotDistinctFrom` are not supported by every database provider; invalid combinations fail at query time.
+WHERE operators include `Eq`, `Ne`, `Gt`, `Lt`, `Gte`, `Lte`, `Like`, `ILike`, `In`, `NotIn`, `Is`, `IsNot`, `IsDistinctFrom`, and `IsNotDistinctFrom`. An empty `In` condition renders an always-false predicate; an empty `NotIn` condition renders an always-true predicate. Use `Any(op)` or `All(op)` with a comparison operator to build PostgreSQL-style quantified comparisons such as `= ANY (...)` or `> ALL (...)`; these are not supported by every provider. `ILike`, `Is`, `IsNot`, `IsDistinctFrom`, and `IsNotDistinctFrom` are also not supported by every database provider; invalid combinations fail at query time.
 
-Use `Is` and `IsNot` with a [`Literal`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Literal) (`Null`, `True`, `False`, `Unknown`) for SQL keyword predicates such as `IS NULL` and `IS NOT TRUE`. Pass any other value to compare with a bound parameter (for example `status IS :w1`). PostgreSQL accepts `Literal` values only with `Is` and `IsNot`; SQLite also allows arbitrary bound values. `IsNull` and `IsNotNull` are deprecated; use `Is` with `Null` or `IsNot` with `Null` instead.
+Use `Subselect` to insert a trusted SQL subquery into an `In`, `NotIn`, `Any`, or `All` condition. The subquery is rendered unchanged, and `Param` adds named parameters for placeholders inside it:
+
+```go
+f := tidal.Where(
+		"experiment_id",
+		tidal.NotIn,
+	 	tidal.Subselect("SELECT experiment_id FROM task_versions WHERE task_id=:task_id")
+	).Param("task_id", taskID)
+// WHERE experiment_id NOT IN (SELECT experiment_id FROM task_versions WHERE task_id=:task_id)
+```
+
+For these operators, a string value beginning with `SELECT` or `WITH` is also
+treated as a trusted subquery. Other string values remain bound parameters.
+
+Quantified comparisons bind an array as one parameter or accept a subquery:
+
+```go
+f := tidal.Where("score", tidal.All(tidal.Gt), []int64{1, 2, 3})
+// WHERE score > ALL(:w1)
+```
+
+Use `Is` and `IsNot` with a [`Literal`](https://pkg.go.dev/go.rtnl.ai/tidal/filter#Literal) (`Null`, `True`, `False`, `Unknown`) for SQL keyword predicates such as `IS NULL` and `IS NOT TRUE`. Pass any other value to compare with a bound parameter (for example `status IS :w1`). PostgreSQL accepts `Literal` values only with `Is` and `IsNot`; SQLite also allows arbitrary bound values.
 
 `IsDistinctFrom` and `IsNotDistinctFrom` render null-safe comparisons with a bound parameter (for example `a IS DISTINCT FROM :w1`). Use `ILike` for case-insensitive pattern matching on providers that support it (for example PostgreSQL).
 
@@ -176,11 +197,14 @@ f := tidal.Where("revoked", tidal.Is, tidal.Null).
 Flat `And`/`Or` chains follow SQL precedence: `Where("a", Eq, 1).And("b", Eq, 2).Or("c", Eq, 3)` renders `a = :w1 AND b = :w2 OR c = :w3`, which SQL parses as `(a AND b) OR c`. Use `AndGroup` or `OrGroup` for explicit grouping.
 
 ```go
-// tidal.Where starts the filter; a second Where replaces the first WHERE clause.
+// tidal.Where starts the filter; a second Where appends another AND condition.
 f := tidal.Where("status", tidal.Eq, "active").
- Where("role", tidal.Eq, "admin") // only role = :w1 remains
+ Where("role", tidal.Eq, "admin") // both conditions remain, joined by AND
 
-// And/Or/AndGroup/OrGroup append to the current WHERE clause.
+// And/Or/AndGroup/OrGroup append to the current WHERE clause. Inside an
+// AndGroup or OrGroup callback, WhereGroup.Where also appends with AND, just
+// like Filter.Where. Use WhereGroup.Set to replace that group's expression
+// and WhereGroup.Reset to clear it.
 f = tidal.Where("status", tidal.Eq, "active").
  And("id", tidal.In, []int64{1, 2, 3}).
  And("age", tidal.Gte, 18).
@@ -290,13 +314,13 @@ fmt.Printf("schema at migration %d (%s), applied %s with %s\n",
 
 The `go.rtnl.ai/tidal/fields` package provides custom column types that implement the `database/sql` [`driver.Valuer`](https://pkg.go.dev/database/sql/driver#Valuer) and [`sql.Scanner`](https://pkg.go.dev/database/sql#Scanner) interfaces. This means they can be used directly as `Model` struct fields and passed to or scanned from the database without any extra conversion code.
 
-| Field | Go type | Use for | Null handling |
-| --- | --- | --- | --- |
-| `JSONB` | `json.RawMessage` (`[]byte`) | Arbitrary JSON stored in a `JSONB` or `BYTEA` column | Empty/`null` JSON scans to a `nil` slice |
-| `NullJSONB` | struct with `Valid bool` and `JSONB` | A nullable JSON column where you must distinguish SQL `NULL` from JSON `null`/`{}` | `Valid` is `false` when the column is `NULL` or the JSON is `null` |
-| `StringArray` | `[]string` | A list of strings stored as a JSON array | Empty array scans to a `nil` slice |
-| `NullStringArray` | struct with `Valid bool` and `StringArray` | A nullable list of strings | `Valid` is `false` when the column is `NULL` |
-| `Timestamp` | struct wrapper around `time.Time` | UTC-normalized timestamp values with stable precision across drivers | Zero value writes/scans as SQL `NULL` |
+| Field             | Go type                                    | Use for                                                                            | Null handling                                                      |
+| ----------------- | ------------------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `JSONB`           | `json.RawMessage` (`[]byte`)               | Arbitrary JSON stored in a `JSONB` or `BYTEA` column                               | Empty/`null` JSON scans to a `nil` slice                           |
+| `NullJSONB`       | struct with `Valid bool` and `JSONB`       | A nullable JSON column where you must distinguish SQL `NULL` from JSON `null`/`{}` | `Valid` is `false` when the column is `NULL` or the JSON is `null` |
+| `StringArray`     | `[]string`                                 | A list of strings stored as a JSON array                                           | Empty array scans to a `nil` slice                                 |
+| `NullStringArray` | struct with `Valid bool` and `StringArray` | A nullable list of strings                                                         | `Valid` is `false` when the column is `NULL`                       |
+| `Timestamp`       | struct wrapper around `time.Time`          | UTC-normalized timestamp values with stable precision across drivers               | Zero value writes/scans as SQL `NULL`                              |
 
 `JSONB`, `NullJSONB`, `StringArray`, and `NullStringArray` marshal/scan as JSON, so those columns should use JSON-compatible storage (`JSONB` or `BYTEA` in Postgres, `BLOB`/`TEXT` in SQLite). `Timestamp` stores ISO-8601 UTC values and normalizes precision when read/written.
 
@@ -583,11 +607,11 @@ go test ./bind -run '^$' -bench '^BenchmarkRewrite$' -benchmem -count=1
 
 Last observed benchmark on darwin/arm64 (Apple M2):
 
-| Case | ns/op | B/op | allocs/op |
-| --- | ---: | ---: | ---: |
-| OrderedSimple | 937.9 | 198 | 6 |
-| OrderedComplex | 1407 | 308 | 5 |
-| PositionalSimple | 549.4 | 256 | 4 |
+| Case             | ns/op | B/op | allocs/op |
+| ---------------- | ----: | ---: | --------: |
+| OrderedSimple    | 937.9 |  198 |         6 |
+| OrderedComplex   |  1407 |  308 |         5 |
+| PositionalSimple | 549.4 |  256 |         4 |
 
 SQLite tests need no setup. Each test suite creates its own database file in a temporary directory.
 
